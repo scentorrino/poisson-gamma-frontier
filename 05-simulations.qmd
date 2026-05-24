@@ -31,9 +31,8 @@ dgp_grid <- mc$dgp_grid
 
 # Re-summarise with a robustness filter that drops replications whose point
 # estimates or standard errors blow up despite optim returning a "converged"
-# code. This catches the flat alpha → 0, b → infty ridge that the L-BFGS-B
-# bounds in fit_poisson_frontier are designed to avoid but cannot rule out
-# entirely in finite samples (cf. the weak-identification warning in §4).
+# code. This catches occasional finite-sample boundary excursions that the
+# L-BFGS-B bounds in fit_poisson_frontier do not always rule out.
 robust_stats <- function(est, se, true_val,
                          est_max = 1e3, se_max = 1e3) {
   ok <- is.finite(est) & is.finite(se) &
@@ -409,16 +408,11 @@ ggplot(cov_df, aes(x = n_fac, y = coverage, fill = Model)) +
 The correctly specified exponential frontier achieves nominal 95% coverage
 for all parameters at $n = 500$ and beyond, consistent with the asymptotic
 normality established in @eq-asymp-normal. The Gamma frontier, by contrast,
-exhibits chronic delta-method under-coverage in the $\alpha_0 = 1$ panel of
+exhibits delta-method under-coverage in the $\alpha_0 = 1$ panel of
 @fig-sim-coverage, typically 70–80% for $\beta_1$ and $b$, that does not
-attenuate with sample size. The cause is a flat $\alpha$-direction in the
-log-likelihood: the observed-information Hessian under-states the true
-sampling variability of the joint $(\hat\alpha, \hat b)$ pair, so the
-delta-method intervals are too short. The slope $\beta_2$ is unaffected
-(its Fisher information is decoupled from $\alpha$) and attains nominal
-coverage in both specifications. Profile-likelihood intervals for $\alpha$,
-illustrated in @fig-profile-lik, sidestep this problem and are the
-recommended interval procedure when $\hat\alpha$ is reported.
+attenuate with sample size. The slope $\beta_2$ is unaffected (its Fisher
+information is decoupled from $\alpha$) and attains nominal coverage in
+both specifications.
 
 ::: {.remark title="Coverage under misspecification"}
 Under $\alpha_0 = 2$, the Exp
@@ -505,8 +499,7 @@ shrink at the parametric $\sqrt{n}$ rate across the grid
 $n \in \{500, 1000, 2500\}$. The exponential frontier, when correctly
 specified, also attains nominal 95% delta-method coverage at $n = 500$.
 The Gamma frontier exhibits delta-method under-coverage of $\hat\alpha$
-and $\hat b$ that does not attenuate with sample size; profile-likelihood
-intervals are recommended when $\hat\alpha$ is reported. Second, ignoring
+and $\hat b$ that does not attenuate with sample size. Second, ignoring
 the frontier structure (the Poisson GLM) biases the intercept by a
 predictable log-mean-inefficiency factor while leaving slope coefficients
 intact: a pattern that alerts practitioners to the presence of

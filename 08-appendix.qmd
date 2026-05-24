@@ -134,9 +134,7 @@ of a set containing the true parameter, continuity with a uniform
 law-of-large-numbers bound, and non-singular Fisher information)
 therefore yield consistency and $\sqrt{n}$-asymptotic normality of the
 MLE. In the Gamma frontier these conditions hold provided $\alpha$ is
-bounded away from zero and $b$ is bounded away from zero and infinity; the
-shape parameter $\alpha$ may be weakly identified in small samples or
-shallow panels, a phenomenon documented in @sec-simulations.
+bounded away from zero and $b$ is bounded away from zero and infinity.
 
 
 ## Existence of conditional moments $\mathrm{E}[e^{r u_i} \mid y_i,\, \mathbf{x}_i]$ {#sec-app-condmoments}

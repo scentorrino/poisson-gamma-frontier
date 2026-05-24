@@ -36,11 +36,11 @@ lr_stat     <- emp$lr_stat
 lr_pval     <- emp$lr_pval
 compare_tbl <- emp$compare_tbl
 
-# Preferred model: Gamma if converged to a finite, non-degenerate optimum
-# AND its scores were computed; otherwise fall back to the exponential
-# fit. The multi-start may report convergence = 0 while sitting on the
-# alpha -> 0 ridge with loglik = -.Machine$double.xmax (a sentinel from
-# the PMF evaluator); reject that case explicitly.
+# Preferred model: Gamma if converged to a finite optimum AND its scores
+# were computed; otherwise fall back to the exponential fit. The
+# multi-start may report convergence = 0 while sitting at a boundary with
+# loglik = -.Machine$double.xmax (a sentinel from the PMF evaluator);
+# reject that case explicitly.
 gam_converged <- !is.null(fit_gam) &&
                  isTRUE(fit_gam$convergence == 0L) &&
                  is.finite(fit_gam$loglik) &&
@@ -254,15 +254,12 @@ future work. Coefficient estimates are unaffected by this choice.
 :::
 
 ::: {.remark title="Gamma frontier convergence"}
-The Gamma frontier with free $\alpha$ did not converge on the patent panel.
-The likelihood surface is flat along the ridge $\alpha \to 0$, $b \to \infty$
-at constant $\alpha/b$ (see @sec-estimation), and with $n = 1730$ pooled
-observations the curvature in the $\alpha$ direction is insufficient for
-the optimiser to locate an interior maximum reliably. We therefore retain
-the exponential frontier as the preferred homogeneous specification here. A
-related diagnostic from the scaling-model fit of @sec-emp-scaling (where the
-free-$\alpha$ Gamma frontier does converge but to $\hat\alpha = 1.000$ at the
-exponential boundary) is reported alongside the LR test in that section.
+The Gamma frontier with free $\alpha$ did not converge on the patent panel,
+and we retain the exponential frontier as the preferred homogeneous
+specification. A related diagnostic from the scaling-model fit of
+@sec-emp-scaling (where the free-$\alpha$ Gamma frontier does converge but
+to $\hat\alpha = 1.000$ at the exponential boundary) is reported alongside
+the LR test in that section.
 :::
 
 ## Efficiency Scores {#sec-emp-efficiency}
@@ -723,14 +720,8 @@ choice between exponential and Gamma inefficiency. With the scaling
 structure in place, the free-$\alpha$ Gamma fit (M6) converges to
 $\hat\alpha = 1.000$ at the exponential boundary; the test statistic is
 LR$_4 = 0.00$ ($p = 1.00$), so the data provide no evidence against the
-exponential restriction. This is consistent with the weak-identification
-phenomenon documented in @sec-simulations: when the frontier mean
-$\lambda_i$ is large relative to $b$ (as it is here, with mean patent
-count $\approx 35$ and $\hat b \approx 0.52$), the curvature of the
-log-likelihood in the $\alpha$ direction is shallow, and the sample carries
-little information about the shape of the inefficiency density. The
-exponential scaling frontier (M4/M5) is therefore retained as the preferred
-specification.
+exponential restriction. The exponential scaling frontier (M4/M5) is
+therefore retained as the preferred specification.
 
 The signs and magnitudes of the $\hat{\delta}$ estimates accord with prior
 expectations. The capital coefficient

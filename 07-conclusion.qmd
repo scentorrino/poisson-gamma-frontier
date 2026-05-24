@@ -16,27 +16,20 @@ rate $b_i$ without sacrificing the closed form.
 The Monte Carlo evidence in @sec-simulations confirms $\sqrt{n}$ convergence
 for all parameters and shows that the exponential frontier ranks units
 almost as accurately as the correctly specified Gamma model when the true
-shape lies near unity. Two limitations follow directly. First, the
-rate–shape pair $(\alpha, b)$ is weakly identified along the
-$\alpha \to 0$, $b \to \infty$ ridge: this manifests as persistent
-under-coverage of delta-method intervals for $\hat\alpha$, and we recommend
-profile-likelihood inference whenever inference on $\alpha$ is of
-substantive interest. Second, the model treats the sample as a pooled
+shape lies near unity. One limitation follows directly: the model treats the sample as a pooled
 cross-section, with $u_i$ independent of $\mathbf{x}_i$; extending the
 closed-form likelihood to genuine panel structures with a time-invariant
 firm effect distinct from time-varying inefficiency is the most immediate
 next step.
 
-The empirical application reinforces both points. On the @hausman1984
-patent panel the exponential frontier is precisely estimated and reproduces
-the textbook R&D elasticity, while the homogeneous Gamma fit cannot
-disentangle $\alpha$ from $b$, an outcome anticipated by the curvature
-analysis. The scaling specification (@sec-scaling) resolves the
-difficulty by tying $b_i$ to firm characteristics, illustrating how the
-closed form admits inefficiency determinants without simulation. Two
+The empirical application illustrates the closed-form likelihood in use.
+On the @hausman1984 patent panel the exponential frontier is precisely
+estimated and reproduces the textbook R&D elasticity, while the
+homogeneous Gamma fit cannot separately identify $\alpha$ and $b$. The
+scaling specification (@sec-scaling) resolves this difficulty by tying
+$b_i$ to firm characteristics, illustrating how the closed form admits
+inefficiency determinants without simulation. Two
 further extensions are natural: a zero-inflated frontier for settings with
 structural non-participation, and Bayesian estimation following
-@mutzBornmannDaniel2017 in the count-data SFA setting, which
-bypasses the flat-$\alpha$ direction by integrating over $\alpha$ rather
-than profiling it out.
+@mutzBornmannDaniel2017 in the count-data SFA setting.
 

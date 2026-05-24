@@ -45,7 +45,7 @@ At $\alpha = 1$ with $y_i > b$ the closed form @eq-cost-pmf is used directly; fo
 
 ## Starting Values
 
-Starting values are essential because the likelihood surface has a degenerate ridge and the dimension of the parameter space is $k + 1$ or $k + 2$. We exploit the fact that the Poisson GLM, which ignores
+Starting values are essential because the dimension of the parameter space is $k + 1$ or $k + 2$ and the joint surface over $(\boldsymbol{\beta}, b, \alpha)$ is not globally concave. We exploit the fact that the Poisson GLM, which ignores
 inefficiency, provides consistent estimates of $\boldsymbol{\beta}$ only up to an additive shift in the intercept, but yields consistent estimates of the slope coefficients. Formally, let $\hat{\boldsymbol{\beta}}_{\text{Pois}}$
 denote the standard Poisson MLE. Under the homogeneous DGP, $u_i \perp \mathbf{x}_i$, $\log\mathrm{E}[Y_i \mid \mathbf{x}_i] = a_i + \log\mathrm{E}[e^{\mp u_i}]$, so the slope coefficients are asymptotically unaffected by ignoring $u_i$ while the intercept is biased by $\alpha\,\log\bigl(b/(b+1)\bigr) < 0$ in the production orientation and by $\alpha\,\log\bigl(b/(b-1)\bigr) > 0$ in the cost orientation (the latter requires $b_0 > 1$ for the marginal mean to exist). The bias direction reverses with the orientation but its absolute magnitude is the same log-mean-inefficiency factor.
 
@@ -67,178 +67,15 @@ We therefore fix the cost-orientation starter at $b_0 = e^{0.92} \approx 2.5$, a
 
 **Exponential model.** When $\alpha$ is fixed at 1, the $k + 1$ free parameters are $(\boldsymbol{\beta}', \log b)'$. We maximize the log-likelihood using a gradient descent algorithm with a numerical Hessian computed at the solution.
 
-**Gamma model.** Estimating $\alpha$ freely introduces a qualitatively different optimization challenge. The likelihood surface has a nearly flat ridge along the curve $\alpha \to 0$, $b \to \infty$ while holding $\alpha/b$ constant: as $\alpha \to 0$ the Gamma degenerates toward a point mass at zero, reducing the frontier model to a standard Poisson regression. This ridge does not correspond to a local maximum of practical interest but can trap gradient-based methods if the initial value is poorly chosen.
+**Gamma model.** Estimating $\alpha$ freely adds one parameter and the joint surface over $(\boldsymbol{\beta}, b, \alpha)$ is no longer concave away from the truth. As $\alpha \to 0$ the Gamma degenerates toward a point mass at zero and the frontier model reduces to a standard Poisson regression; the parameter region near that boundary is not of practical interest and can slow gradient-based optimisation if the initial value is poorly chosen.
 
 We address this with three strategies. First, we use a warm start: the exponential model is fitted first, and its solution $(\hat{\boldsymbol{\beta}},\log \hat{b})$ together with $\log \alpha_0 = 0$ provides the starting vector
 for the Gamma optimisation. This anchors the search near the exponential sub-model, where the likelihood is concave and the gradient is well-defined.
 
-Second, we restrict $\log b \in [-8, 8]$ (corresponding to $b \in [3 \times 10^{-4},\, 3 \times 10^3]$) and $\log \alpha \in [-2, 4]$ (corresponding to $\alpha \in [0.14,\, 55]$), keeping the optimiser away from the degenerate
-boundary. Third, if the optimization algorithm does not converge, a secondary grid of four alternative $\log \alpha$ starting points is tried and the best objective value is retained.
+Second, we restrict $\log b \in [-8, 8]$ (corresponding to $b \in [3 \times 10^{-4},\, 3 \times 10^3]$) and $\log \alpha \in [-2, 4]$ (corresponding to $\alpha \in [0.14,\, 55]$), keeping the optimiser inside a parameter region where the likelihood curvature is well-behaved. Third, if the optimization algorithm does not converge, a secondary grid of four alternative $\log \alpha$ starting points is tried and the best objective value is retained.
 
 The same numerical approach applies to the cost orientation. The per-evaluation cost is set by the quadrature route described in the cost-frontier likelihood remark above rather than by the alternating-series sum.
 
-::: {.remark title="The degeneracy ridge"}
-The ridge $\alpha \to 0$, $b \to \infty$ at constant $\alpha/b$ is not an identification failure of the model but a
-near-boundary behaviour of the likelihood. At the true $(\alpha_0, b_0)$ with $\alpha_0 > 0$ finite, the Fisher information matrix is positive definite and the MLE is consistent and asymptotically normal. The issue is purely numerical: for any finite sample the gradient of the log-likelihood may be very shallow near the boundary, making unconstrained optimisation slow or unreliable. The parameter bounds above exclude the problematic region while leaving any interior maximum accessible.
-:::
-
-@fig-profile-lik illustrates the profile log-likelihood for $\alpha$ on two simulated DGPs at three sample sizes $n \in \{500, 1000, 2500\}$. For each DGP a single master dataset of size $n_{\max} = 2500$ is generated, and the profile at each smaller $n$ uses the first $n$ observations of that same master dataset; the curves within a panel
-therefore differ only in the amount of information available, not in the underlying draws. When the true DGP is exponential ($\alpha_0 = 1$, left panel) the profile is sharply maximised at the truth already at $n = 500$, and the LR-95% interval narrows monotonically as $n$ grows. When the true DGP is Gamma with $\alpha_0 = 2$ and $b_0 = 1$ (right panel) the profile is essentially flat at $n = 500$, becomes resolved near $\alpha_0$ at $n = 1000$, and
-yields a tight interval around the truth at $n = 2500$. The weak identification of $\alpha$ is a finite-sample phenomenon under high inefficiency-to-signal ratios, not a structural failure: at $n = 2500$ the Fisher information in the $\alpha$ direction is large enough for the profile to recover the truth in either DGP.
-
-```{r}
-#| label: profile-lik
-#| cache: true
-
-set.seed(20240315L)
-n_max  <- 2500L
-n_grid <- c(500L, 1000L, n_max)
-
-# For each DGP, draw one master dataset of size n_max once. Profiles at
-# smaller n use the first n observations from the same master dataset, so
-# the sharpening of the profile as n grows reflects added information
-# rather than different draws.
-master_dataset <- function(alpha_true, b_true) {
-  z   <- rnorm(n_max)
-  u   <- rgamma(n_max, shape = alpha_true, rate = b_true)
-  lam <- exp(1 + z - u)
-  y   <- rpois(n_max, lam)
-  list(z = z, y = y, u = u)
-}
-
-# Profile log-likelihood for alpha on the first n_use observations of `data`.
-# At each fixed alpha on the grid the inner optimiser profiles out
-# (beta, log b) starting from a warm-start chain walked outward from the
-# truth, with a cold-start fallback to detect basin drift.
-profile_loglik_on <- function(data, n_use, alpha_true) {
-  z <- data$z[seq_len(n_use)]
-  y <- data$y[seq_len(n_use)]
-  X <- cbind(1, z)
-
-  alpha_grid <- seq(0.5, 3, by = 0.25)
-
-  # Method-of-moments warm-start: Poisson-GLM slopes with a bias-corrected
-  # intercept, plus (b, alpha) from the alpha-free root equation
-  # log R_3(b) / log R_2(b) = log(rhs_3) / log(S_2 + 1). The same
-  # routine seeds the package's MLE so the profile curves use a starting
-  # point consistent with how a practitioner would fit the model.
-  mom_init <- mom_starts(y, X, orientation = "production")
-  init_par <- c(mom_init$beta, log(mom_init$b))
-
-  # SE-based bounds on beta around the Poisson-GLM warm-start (matching
-  # fit_poisson_frontier()'s default in countSFA >= 0.4.0). Without these,
-  # optim can wander into a regime where x_i' beta exceeds the auto-K
-  # convergence radius of the alternating series and the inner objective
-  # is dominated by truncation noise, dropping the profile point.
-  glm_fit  <- suppressWarnings(glm(y ~ X - 1, family = poisson()))
-  beta_se  <- summary(glm_fit)$coefficients[, "Std. Error"]
-  beta_rad <- pmax(6 * beta_se, 3)
-  lower    <- c(coef(glm_fit) - beta_rad, -4)
-  upper    <- c(coef(glm_fit) + beta_rad,  4)
-
-  # Auto-K (NULL) lets pmf_poisson_gamma pick the truncation depth per
-  # observation; countSFA >= 0.4.0 clamps per-observation log-PMFs to
-  # the valid range [-1e6, 0] internally, so the package wrapper
-  # returns a smooth finite value even when a few observations have
-  # truncation-noise log-PMFs.
-  safe_nll <- function(par, y, X, alpha) {
-    v <- suppressWarnings(log_lik_poisson_frontier(par, y, X, alpha, K = NULL))
-    if (!is.finite(v)) 1e10 else v
-  }
-
-  fit_at <- function(al, par_init) {
-    par_init <- pmin(pmax(par_init, lower + 1e-6), upper - 1e-6)
-    optim(par_init, fn = safe_nll,
-          y = y, X = X, alpha = al,
-          method  = "L-BFGS-B",
-          lower   = lower, upper = upper,
-          control = list(maxit = 500, factr = 1e2))
-  }
-
-  ord  <- order(abs(alpha_grid - alpha_true))
-  ll   <- numeric(length(alpha_grid))
-  pars <- vector("list", length(alpha_grid))
-  for (k in seq_along(ord)) {
-    idx    <- ord[k]
-    fitted <- which(!vapply(pars, is.null, logical(1)))
-    warm   <- if (length(fitted) == 0L) init_par else
-      pars[[fitted[which.min(abs(alpha_grid[fitted] - alpha_grid[idx]))]]]
-    cands <- list(
-      tryCatch(fit_at(alpha_grid[idx], warm),     error = function(e) NULL),
-      tryCatch(fit_at(alpha_grid[idx], init_par), error = function(e) NULL)
-    )
-    cands <- Filter(function(o) !is.null(o) && is.finite(o$value), cands)
-    if (length(cands) == 0L) {
-      ll[idx]     <- NA_real_
-      pars[[idx]] <- warm
-    } else {
-      best <- cands[[which.min(vapply(cands, `[[`, numeric(1L), "value"))]]
-      ll[idx]     <- if (best$value < 1e9) -best$value else NA_real_
-      pars[[idx]] <- best$par
-    }
-  }
-  data.frame(alpha = alpha_grid, loglik = ll,
-             dgp   = paste0("alpha", alpha_true),
-             n     = n_use)
-}
-
-# Build the full (DGP, n) profile grid using nested master datasets.
-prof_df <- do.call(rbind, lapply(c(1, 2), function(at) {
-  dat <- master_dataset(alpha_true = at, b_true = 1)
-  do.call(rbind, lapply(n_grid, function(nn)
-    profile_loglik_on(dat, nn, alpha_true = at)))
-}))
-prof_df <- prof_df[is.finite(prof_df$loglik), ]
-
-# Centre each (DGP, n) curve at its maximum so the LR threshold reads
-# directly off the y-axis.
-prof_df <- do.call(rbind, lapply(
-  split(prof_df, list(prof_df$dgp, prof_df$n), drop = TRUE),
-  function(d) {
-    d$loglik_c <- d$loglik - max(d$loglik, na.rm = TRUE)
-    d
-  }))
-
-prof_df$n_lab <- factor(paste0("n = ", format(prof_df$n, big.mark = ",")),
-                        levels = paste0("n = ", format(n_grid, big.mark = ",")))
-
-```
-
-```{r}
-#| label: fig-profile-lik
-#| cache: true
-#| fig-cap: "Profile log-likelihood for $\\alpha$ on two simulated DGPs ($b_0 = 1$, $\\boldsymbol{\\beta}_0 = (1, 0.5)'$, $z_i \\sim \\mathcal{N}(0, 1)$), each shown at three sample sizes $n \\in \\{500, 1000, 2500\\}$. Within each panel the curves share the same master dataset (the smaller $n$ uses the first $n$ observations of the $n = 2500$ draw), so differences in curvature reflect added information rather than different random draws. At each fixed $\\alpha$, the coefficients $\\boldsymbol{\\beta}$ and rate $b$ are profiled out by inner MLE. Left panel: true $\\alpha_0 = 1$ (exponential DGP). Right panel: true $\\alpha_0 = 2$ (Gamma DGP). Horizontal dotted line: LR-95% threshold $-\\tfrac{1}{2}\\chi^2_{1,0.95} \\approx -1.92$. Red dashed line: true $\\alpha_0$."
-
-
-dgp_labels <- c(alpha1 = "alpha[0] == 1",
-                alpha2 = "alpha[0] == 2")
-
-vline_df <- data.frame(dgp  = c("alpha1", "alpha2"),
-                       xint = c(1, 2))
-
-ggplot(prof_df, aes(x = alpha, y = loglik_c,
-                    colour = n_lab, linetype = n_lab, group = n_lab)) +
-  geom_line(linewidth = 0.8) +
-  geom_point(size = 0.9) +
-  geom_vline(data = vline_df, aes(xintercept = xint),
-             linetype = "dashed", colour = "firebrick", linewidth = 0.6,
-             inherit.aes = FALSE) +
-  geom_hline(yintercept = -qchisq(0.95, df = 1) / 2,
-             linetype = "dotted", colour = "grey40") +
-  facet_wrap(~ dgp, labeller = as_labeller(dgp_labels, label_parsed)) +
-  scale_colour_manual(values = c("#9ecae1", "#3182bd", "#08306b"),
-                      name = NULL) +
-  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
-                        name = NULL) +
-  scale_x_continuous(breaks = seq(0.5, 3, by = 0.5)) +
-  coord_cartesian(ylim = c(-6, 0.2)) +
-  labs(x = expression(alpha),
-       y = expression(log~L(alpha) - log~L(hat(alpha)))) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = "bottom")
-```
-
-The horizontal dotted line in @fig-profile-lik marks the 95% confidence threshold $-\tfrac{1}{2}\chi^2_{1,0.95} \approx -1.92$: values of $\alpha$ whose profile log-likelihood exceeds this threshold form a likelihood-ratio confidence interval for $\alpha$. Reading the figure along the $n$-axis confirms that weak $\alpha$ identification is a finite-sample phenomenon rather than a structural defect of the model. In the exponential DGP the profile is already sharply peaked at $n = 500$ and tightens further with $n$. In the Gamma DGP, the $n = 500$ profile is flat across nearly the full displayed grid, the $n = 1000$ profile begins to resolve, and by $n = 2500$ the LR-95% interval has narrowed around the truth. The practitioner remark in this section recommends profile-likelihood inference whenever $n$ is in the range where the Wald approximation around $\hat\alpha$ remains unreliable.
 
 ## Standard Errors and Inference
 
@@ -277,21 +114,6 @@ where $\mathbf{I}(\boldsymbol{\vartheta}_0)$ is the Fisher information matrix.
 These conditions hold at any interior point of the parameter space; the Monte
 Carlo experiment of @sec-simulations confirms that the normal approximation is
 accurate for $n \geq 500$ across all DGP configurations considered.
-
-::: {.remark title="Weak identification of $\alpha$"}
-In practice, $\alpha$ may be weakly identified: the shape of the inefficiency
-distribution is determined by the curvature of the log-likelihood in the
-$\alpha$ direction, which is often flat relative to the curvature in the
-$(\boldsymbol{\beta}, b)$ directions. The Monte Carlo results in
-@sec-simulations document this. Although the bias and RMSE of $\hat\alpha$
-shrink at the parametric $\sqrt{n}$ rate, the delta-method 95% CI for $\alpha$
-under-covers across the entire grid $n \in \{500, 1000, 2500\}$: the
-observed-information Hessian under-states the joint variability of
-$(\hat\alpha, \hat b)$ when the $\alpha$-ridge is shallow. We therefore
-recommend reporting profile-likelihood intervals for $\alpha$
-(@fig-profile-lik) rather than relying solely on the delta-method Wald
-interval whenever the shape parameter is of inferential interest.
-:::
 
 
 ## Hypothesis Testing
