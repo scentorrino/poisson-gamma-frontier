@@ -104,74 +104,32 @@ rownames(mc_summary) <- NULL
 
 ## Experimental Design
 
-We validate the maximum likelihood estimators developed in @sec-estimation
-through a controlled Monte Carlo experiment. The data-generating process
-mirrors the model of @sec-model exactly:
+We validate the maximum likelihood estimators developed in @sec-estimation through a controlled Monte Carlo experiment. The data-generating process mirrors the model of @sec-model:
 
 $$
 Y_i \mid u_i \;\sim\; \mathrm{Poisson}\!\left(\exp(\mathbf{x}_i'\boldsymbol{\beta}_0 - u_i)\right),
 \qquad u_i \;\sim\; \mathrm{Gamma}(\alpha_0,\, b_0),
 $$ {#eq-dgp}
 
-with $\mathbf{x}_i = (1,\, z_i)'$, $z_i \overset{\text{iid}}{\sim} N(0, 1)$,
-and true frontier coefficients $\boldsymbol{\beta}_0 = (1,\; 0.5)'$.
-The inefficiency distribution is varied across a $2 \times 2$ grid:
-$\alpha_0 \in \{1, 2\}$ (exponential versus hump-shaped Gamma density) and
-$b_0 \in \{1, 2\}$ (lower versus higher average inefficiency,
-$\bar{u}_0 = \alpha_0/b_0 \in \{0.5, 1, 2\}$). Three sample sizes
-$n \in \{500, 1000, 2500\}$ are crossed with this grid, yielding twelve
-experimental cells and $R = 1{,}000$ independent replications each. Seeds
-are pre-drawn from a fixed master seed to ensure exact reproducibility under
-any parallel schedule.
+with $\mathbf{x}_i = (1,\, x_i)'$, $x_i \overset{\text{iid}}{\sim} N(0, 1)$, and true frontier coefficients $\boldsymbol{\beta}_0 = (1,\; 0.5)'$. The inefficiency distribution is varied across a $2 \times 2$ grid: $\alpha_0 \in \{1, 2\}$ (exponential versus hump-shaped Gamma density) and $b_0 \in \{1, 2\}$ (lower versus higher average inefficiency, $\bar{u}_0 = \alpha_0/b_0 \in \{0.5, 1, 2\}$). Three sample sizes $n \in \{500, 1000, 2500\}$ are crossed with this grid, yielding twelve
+DGP and $R = 1{,}000$ independent replications each. 
 
-Three estimators are evaluated in every replication. The *Poisson GLM* fits
-a standard Poisson regression that ignores inefficiency entirely, serving as
-the misspecified benchmark. It consistently estimates $\log \mathrm{E}[Y_i \mid \mathbf{x}_i]
-= a_i + \log \mathrm{E}[e^{-u_i}]$, so slope coefficients are
-asymptotically unbiased but the intercept is attenuated by
-$\alpha_0 \log\bigl(b_0/(b_0+1)\bigr)$ (cf.\ @eq-pois-attenuation). The *Exp frontier* fits the
-Poisson frontier with exponential inefficiency ($\alpha = 1$ fixed by maximum
-likelihood); it is correctly specified when $\alpha_0 = 1$ and misspecified
-otherwise. The *Gamma frontier* estimates both $\alpha$ and $b$ freely and
-is correctly specified across all twelve cells.
+Three estimators are evaluated in every replication. The Poisson GLM fits a standard Poisson regression that ignores inefficiency entirely, serving as the misspecified benchmark. It consistently estimates $\log \mathrm{E}[Y_i \mid \mathbf{x}_i] = a_i + \log \mathrm{E}[e^{-u_i}]$, so slope coefficients are asymptotically unbiased but the intercept is attenuated by $\alpha_0 \log\bigl(b_0/(b_0+1)\bigr)$ (cf.\ @eq-pois-attenuation). The Exp frontier fits the Poisson frontier with exponential inefficiency ($\alpha = 1$ fixed by maximum likelihood); it is correctly specified when $\alpha_0 = 1$ and misspecified otherwise. The Gamma frontier estimates both $\alpha$ and $b$ freely and is correctly specified across all DGPs.
 
-A natural additional competitor is the negative binomial GLM (the limiting
-case of the frontier model as the inefficiency constraint $u_i \geq 0$ is
-dropped), but because it conflates frontier and random-effects heterogeneity
-it is omitted from the main comparisons; its inclusion is left for future work.
+A natural additional competitor is the negative binomial GLM (the limiting case of the frontier model as the inefficiency constraint $u_i \geq 0$ is dropped), but because it conflates frontier and random-effects heterogeneity it is omitted from the main comparisons.
 
-For each fitted model we record the MLE of all free parameters, their
-delta-method standard errors (as described in @sec-estimation), convergence
-status, whether each nominal 95% confidence interval covers the true value,
-and the mean absolute error (MAE) of the estimated technical efficiency
-scores against the oracle scores $e^{-u_i}$ drawn from the DGP.
+For each fitted model we record the MLE of all free parameters, their delta-method standard errors (as described in @sec-estimation), convergence status, whether each nominal 95% confidence interval covers the true value, and the mean absolute error (MAE) of the estimated technical efficiency scores against the oracle scores $e^{-u_i}$ drawn from the DGP.
 
 ::: {.remark title="Oracle efficiency scores"}
-The oracle score $e^{-u_i}$ is the
-exact realised efficiency of unit $i$ in a given replication, a quantity that
-is unobservable in practice but known in simulation. The MAE
-$n^{-1}\sum_i |\hat{\mathrm{TE}}_i - e^{-u_i}|$ measures how closely the
-conditional mean efficiency approximates the truth, integrating both estimation
-error in $(\hat{\boldsymbol{\beta}}, \hat b, \hat\alpha)$ and the irreducible
-noise from the conditional averaging over $u_i$.
+The oracle score $e^{-u_i}$ is the exact realised efficiency of unit $i$ in a given replication, a quantity that is unobservable in practice but known in simulation. The MAE $n^{-1}\sum_i |\hat{\mathrm{TE}}_i - e^{-u_i}|$ measures how closely the
+conditional mean efficiency approximates the truth, integrating both estimation error in $(\hat{\boldsymbol{\beta}}, \hat b, \hat\alpha)$ and the irreducible noise from the conditional averaging over $u_i$.
 :::
 
-All PMF evaluations and efficiency score computations rely solely on
-standard special functions: the exponential case uses the regularised
-lower incomplete gamma function, while the general Gamma case applies a
-signed log-sum-exp algorithm to the alternating series @eq-pmf-gamma. The
-implementation switches to the closed-form $\alpha = 1$ path whenever
-$|\alpha - 1| < 10^{-10}$, ensuring numerical stability at the exponential
-boundary. The full implementation will be distributed in an accompanying R
-package.
+All PMF evaluations and efficiency score computations rely solely on standard special functions: the exponential case uses the regularised lower incomplete gamma function, while the general Gamma case applies a signed log-sum-exp algorithm to the alternating series @eq-pmf-gamma. The implementation switches to the closed-form $\alpha = 1$ path whenever $|\alpha - 1| < 10^{-10}$, ensuring numerical stability at the exponential boundary. The full implementation is distributed in a companion R package.
 
 ## Parameter Recovery
 
-@tbl-sim-bias reports bias and root mean squared error (RMSE) for the frontier
-coefficients $\beta_1$ (intercept) and $\beta_2$ (slope) together with the
-inefficiency rate $b$, at two representative DGP cells: $(\alpha_0, b_0) = (1, 1)$,
-where the exponential frontier is correctly specified, and $(\alpha_0, b_0) = (2, 1)$,
-where only the Gamma frontier is correctly specified.
+@tbl-sim-bias reports bias and root mean squared error (RMSE) for the frontier coefficients $\beta_1$ (intercept) and $\beta_2$ (slope) together with the inefficiency rate $b$, at two representative DGPs: $(\alpha_0, b_0) = (1, 1)$, where the exponential frontier is correctly specified, and $(\alpha_0, b_0) = (2, 1)$, where only the Gamma frontier is correctly specified.
 
 ```{r}
 #| label: tbl-sim-bias
@@ -215,9 +173,9 @@ panels <- list()
 for (dgp in list(c(1, 1), c(2, 1))) {
   a0 <- dgp[1]; b0 <- dgp[2]
   rows <- lapply(
-    list(c(500,  "beta1"), c(500,  "beta2"), c(500,  "b"),
-         c(1000, "beta1"), c(1000, "beta2"), c(1000, "b"),
-         c(2500, "beta1"), c(2500, "beta2"), c(2500, "b")),
+    list(c("",  "beta1"), c("",  "beta2"), c("",  "b"),
+         c("", "beta1"), c("", "beta2"), c("", "b"),
+         c("", "beta1"), c("", "beta2"), c("", "b")),
     function(x) build_row(a0, b0, as.integer(x[1]), x[2])
   )
   panels[[length(panels) + 1]] <- do.call(rbind, rows)
@@ -250,41 +208,16 @@ kable(
                 font_size = 9)
 ```
 
-Several patterns emerge from @tbl-sim-bias. The Poisson GLM produces
-substantial downward bias in $\beta_1$ across all cells. From
-$\log\mathrm{E}[Y_i\mid\mathbf{x}_i] = a_i + \log\mathrm{E}[e^{-u_i}]$ and
-$\mathrm{E}[e^{-u_i}] = (b_0/(b_0+1))^{\alpha_0}$ (@eq-mgf-prod), the
-asymptotic intercept attenuation is
+Several patterns emerge from @tbl-sim-bias. The Poisson GLM produces substantial downward bias in $\beta_1$ across all cells. From $\log\mathrm{E}[Y_i\mid\mathbf{x}_i] = a_i + \log\mathrm{E}[e^{-u_i}]$ and $\mathrm{E}[e^{-u_i}] = (b_0/(b_0+1))^{\alpha_0}$ (@eq-mgf-prod), the asymptotic intercept attenuation is
 $$
 \mathrm{plim}\,\hat\beta_{1,\mathrm{Pois}} - \beta_{1,0}
 \;=\; \alpha_0\,\log\!\bigl(b_0/(b_0+1)\bigr).
 $$ {#eq-pois-attenuation}
-At $(\alpha_0, b_0) = (1, 1)$ this gives $\log(1/2) \approx -0.693$;
-at $(\alpha_0, b_0) = (2, 1)$ it gives $2\log(1/2) \approx -1.386$.
-Both predictions are confirmed by @tbl-sim-bias. The slope $\beta_2$,
-by contrast, is approximately unbiased under the Poisson GLM in all cells,
-confirming that frontier misspecification contaminates only the intercept
-and leaves slope coefficients intact (under the homogeneous DGP, where
-$u_i \perp \mathbf{x}_i$).
+At $(\alpha_0, b_0) = (1, 1)$ this gives $\log(1/2) \approx -0.693$; at $(\alpha_0, b_0) = (2, 1)$ it gives $2\log(1/2) \approx -1.386$. Both predictions are confirmed by @tbl-sim-bias. The slope $\beta_2$, by contrast, is approximately unbiased under the Poisson GLM in all cells, confirming that frontier misspecification contaminates only the intercept and leaves slope coefficients intact (under the homogeneous DGP, where $u_i \perp \mathbf{x}_i$).
 
-The Exp frontier is nearly unbiased for all parameters when $\alpha_0 = 1$, with
-RMSE declining close to the $\sqrt{n}$ rate expected of a well-posed MLE.
-Under Gamma inefficiency ($\alpha_0 = 2$), the misspecified Exp frontier incurs
-moderate bias in $\hat{b}$ (which is attempting to fit a one-parameter family
-to a two-parameter distribution), while the slope estimates $\hat{\beta}_2$
-remain largely unaffected. This suggests a useful robustness property: the
-Poisson frontier with exponential inefficiency is a consistent estimator of the
-frontier slopes even when the true inefficiency distribution is Gamma.
+The Exp frontier is nearly unbiased for all parameters when $\alpha_0 = 1$, with RMSE declining close to the $\sqrt{n}$ rate expected of a well-posed MLE. Under Gamma inefficiency ($\alpha_0 = 2$), the misspecified Exp frontier incurs moderate bias in $\hat{b}$ (which is attempting to fit a one-parameter family to a two-parameter distribution), while the slope estimates $\hat{\beta}_2$ remain largely unaffected. This suggests a useful robustness property: the Poisson frontier with exponential inefficiency is a consistent estimator of the frontier slopes even when the true inefficiency distribution is Gamma.
 
-The correctly specified Gamma frontier recovers all parameters with small
-bias and RMSE that declines at the parametric $\sqrt{n}$ rate. At $\alpha_0 = 1$
-the bias of $\hat\alpha$ shrinks from $0.13$ at $n = 500$ to near zero
-at $n = 2500$, and the Exp-frontier slopes are unaffected by the surplus
-shape parameter; at $\alpha_0 = 2$, the Gamma frontier identifies the true
-shape with a small downward bias that persists across sample sizes
-($-0.11$ at $n = 500$, $-0.08$ at $n = 2500$), reflecting the well-known
-incidental-parameters character of $\alpha$ when the frontier mean is
-large relative to $b$.
+The correctly specified Gamma frontier recovers all parameters with small bias and RMSE that declines at the parametric $\sqrt{n}$ rate. At $\alpha_0 = 1$ the bias of $\hat\alpha$ shrinks from $0.13$ at $n = 500$ to near zero at $n = 2500$, and the Exp-frontier slopes are unaffected by the surplus shape parameter; at $\alpha_0 = 2$, the Gamma frontier identifies the true shape with a small downward bias that persists across sample sizes ($-0.11$ at $n = 500$, $-0.08$ at $n = 2500$), reflecting the well-known incidental-parameters character of $\alpha$ when the frontier mean is large relative to $b$.
 
 ## RMSE Convergence
 

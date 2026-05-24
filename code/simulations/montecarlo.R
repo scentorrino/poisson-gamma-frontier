@@ -23,7 +23,7 @@
 #   conditional-moment-existence argument).  Output: code/simulations/cost_results.rds
 #
 # Experiment 3 (Scaling model on b, production):
-#   b_i = b_true * exp(-z_det_i' delta_true), with z_det_i = (z_det1, z_det2)
+#   b_i = b_true * exp(-z__i' delta_true), with z__i = (z_1, z_2)
 #   ~ N(0, 1) independent of z_i and of each other.   alpha_true = 1 fixed
 #   at the exponential corollary.  b_true = 2 (a single anchor; the
 #   determinants generate per-observation variation).  Four delta scenarios.
@@ -40,7 +40,7 @@ library(parallel)
 
 beta_true <- c(1, 0.5)
 n_vals    <- c(500L, 1000L, 2500L)
-R         <- 20L  # SMOKE TEST - revert to 1000L
+R         <- 1000L 
 mc_cores  <- if (.Platform$OS.type == "windows") 1L else
              max(1L, detectCores() - 1L)
 
@@ -314,54 +314,48 @@ dgp_grid_prod <- expand.grid(
   stringsAsFactors = FALSE
 )
 
-if (!file.exists("code/simulations/results.rds")) {
 
-  set.seed(42L)
-  seeds_prod <- matrix(sample.int(.Machine$integer.max,
-                                  nrow(dgp_grid_prod) * R),
-                       nrow = nrow(dgp_grid_prod), ncol = R)
+set.seed(42L)
+seeds_prod <- matrix(sample.int(.Machine$integer.max,
+                                nrow(dgp_grid_prod) * R),
+                     nrow = nrow(dgp_grid_prod), ncol = R)
 
-  message(sprintf(
-    "Experiment 1 (production): %d DGPs x %d reps = %d fits on %d cores.",
-    nrow(dgp_grid_prod), R, nrow(dgp_grid_prod) * R, mc_cores
-  ))
+message(sprintf(
+  "Experiment 1 (production): %d DGPs x %d reps = %d fits on %d cores.",
+  nrow(dgp_grid_prod), R, nrow(dgp_grid_prod) * R, mc_cores
+))
 
-  dgp_results_prod <- parallel::mclapply(seq_len(nrow(dgp_grid_prod)), function(g) {
-    a_t <- dgp_grid_prod$alpha_true[g]
-    b_t <- dgp_grid_prod$b_true[g]
-    n_g <- dgp_grid_prod$n[g]
-    message(sprintf("[prod %d/%d] alpha=%g b=%g n=%d", g,
-                    nrow(dgp_grid_prod), a_t, b_t, n_g))
-    rows <- vector("list", R)
-    for (r in seq_len(R)) {
-      if (r %% 100L == 0L)
-        message(sprintf("  [prod DGP %d] rep %d/%d", g, r, R))
-      rows[[r]] <- run_one_rep(seeds_prod[g, r], n_g, a_t, b_t, "production")
-    }
-    cbind(alpha_true = a_t, b_true = b_t, n = n_g,
-          rep = seq_len(R), do.call(rbind, rows),
-          stringsAsFactors = FALSE)
-  }, mc.cores = mc_cores)
+dgp_results_prod <- parallel::mclapply(seq_len(nrow(dgp_grid_prod)), function(g) {
+  a_t <- dgp_grid_prod$alpha_true[g]
+  b_t <- dgp_grid_prod$b_true[g]
+  n_g <- dgp_grid_prod$n[g]
+  message(sprintf("[prod %d/%d] alpha=%g b=%g n=%d", g,
+                  nrow(dgp_grid_prod), a_t, b_t, n_g))
+  rows <- vector("list", R)
+  for (r in seq_len(R)) {
+    if (r %% 100L == 0L)
+      message(sprintf("  [prod DGP %d] rep %d/%d", g, r, R))
+    rows[[r]] <- run_one_rep(seeds_prod[g, r], n_g, a_t, b_t, "production")
+  }
+  cbind(alpha_true = a_t, b_true = b_t, n = n_g,
+        rep = seq_len(R), do.call(rbind, rows),
+        stringsAsFactors = FALSE)
+}, mc.cores = mc_cores)
 
-  mc_wide_prod    <- do.call(rbind, dgp_results_prod)
-  rownames(mc_wide_prod) <- NULL
-  mc_summary_prod <- build_summary(mc_wide_prod, dgp_grid_prod)
+mc_wide_prod    <- do.call(rbind, dgp_results_prod)
+rownames(mc_wide_prod) <- NULL
+mc_summary_prod <- build_summary(mc_wide_prod, dgp_grid_prod)
 
-  saveRDS(
-    list(mc_wide    = mc_wide_prod,
-         mc_summary = mc_summary_prod,
-         dgp_grid   = dgp_grid_prod,
-         R          = R,
-         beta_true  = beta_true,
-         orientation = "production"),
-    file = "code/simulations/results.rds"
-  )
-  message("Experiment 1 complete: code/simulations/results.rds")
-
-} else {
-  message("Experiment 1 (production) results exist; skipping.")
-}
-
+saveRDS(
+  list(mc_wide    = mc_wide_prod,
+       mc_summary = mc_summary_prod,
+       dgp_grid   = dgp_grid_prod,
+       R          = R,
+       beta_true  = beta_true,
+       orientation = "production"),
+  file = "code/simulations/prod_results.rds"
+)
+message("Experiment 1 complete: code/simulations/prod_results.rds")
 
 # =============================================================================
 # EXPERIMENT 2: Homogeneous cost frontier (SAME DGP, sign flipped)
@@ -376,227 +370,139 @@ if (!file.exists("code/simulations/results.rds")) {
 
 dgp_grid_cost <- dgp_grid_prod   # identical grid
 
-if (!file.exists("code/simulations/cost_results.rds")) {
+set.seed(20260503L)
+seeds_cost <- matrix(sample.int(.Machine$integer.max,
+                                nrow(dgp_grid_cost) * R),
+                     nrow = nrow(dgp_grid_cost), ncol = R)
 
-  set.seed(20260503L)
-  seeds_cost <- matrix(sample.int(.Machine$integer.max,
-                                  nrow(dgp_grid_cost) * R),
-                       nrow = nrow(dgp_grid_cost), ncol = R)
+message(sprintf(
+  "Experiment 2 (cost): %d DGPs x %d reps = %d fits on %d cores.",
+  nrow(dgp_grid_cost), R, nrow(dgp_grid_cost) * R, mc_cores
+))
 
-  message(sprintf(
-    "Experiment 2 (cost): %d DGPs x %d reps = %d fits on %d cores.",
-    nrow(dgp_grid_cost), R, nrow(dgp_grid_cost) * R, mc_cores
-  ))
+dgp_results_cost <- parallel::mclapply(seq_len(nrow(dgp_grid_cost)), function(g) {
+  a_t <- dgp_grid_cost$alpha_true[g]
+  b_t <- dgp_grid_cost$b_true[g]
+  n_g <- dgp_grid_cost$n[g]
+  message(sprintf("[cost %d/%d] alpha=%g b=%g n=%d", g,
+                  nrow(dgp_grid_cost), a_t, b_t, n_g))
+  rows <- vector("list", R)
+  for (r in seq_len(R)) {
+    if (r %% 100L == 0L)
+      message(sprintf("  [cost DGP %d] rep %d/%d", g, r, R))
+    rows[[r]] <- run_one_rep(seeds_cost[g, r], n_g, a_t, b_t, "cost")
+  }
+  cbind(alpha_true = a_t, b_true = b_t, n = n_g,
+        rep = seq_len(R), do.call(rbind, rows),
+        stringsAsFactors = FALSE)
+}, mc.cores = mc_cores)
 
-  dgp_results_cost <- parallel::mclapply(seq_len(nrow(dgp_grid_cost)), function(g) {
-    a_t <- dgp_grid_cost$alpha_true[g]
-    b_t <- dgp_grid_cost$b_true[g]
-    n_g <- dgp_grid_cost$n[g]
-    message(sprintf("[cost %d/%d] alpha=%g b=%g n=%d", g,
-                    nrow(dgp_grid_cost), a_t, b_t, n_g))
-    rows <- vector("list", R)
-    for (r in seq_len(R)) {
-      if (r %% 100L == 0L)
-        message(sprintf("  [cost DGP %d] rep %d/%d", g, r, R))
-      rows[[r]] <- run_one_rep(seeds_cost[g, r], n_g, a_t, b_t, "cost")
-    }
-    cbind(alpha_true = a_t, b_true = b_t, n = n_g,
-          rep = seq_len(R), do.call(rbind, rows),
-          stringsAsFactors = FALSE)
-  }, mc.cores = mc_cores)
+mc_wide_cost    <- do.call(rbind, dgp_results_cost)
+rownames(mc_wide_cost) <- NULL
+mc_summary_cost <- build_summary(mc_wide_cost, dgp_grid_cost)
 
-  mc_wide_cost    <- do.call(rbind, dgp_results_cost)
-  rownames(mc_wide_cost) <- NULL
-  mc_summary_cost <- build_summary(mc_wide_cost, dgp_grid_cost)
-
-  saveRDS(
-    list(mc_wide    = mc_wide_cost,
-         mc_summary = mc_summary_cost,
-         dgp_grid   = dgp_grid_cost,
-         R          = R,
-         beta_true  = beta_true,
-         orientation = "cost"),
-    file = "code/simulations/cost_results.rds"
-  )
-  message("Experiment 2 complete: code/simulations/cost_results.rds")
-
-} else {
-  message("Experiment 2 (cost) results exist; skipping.")
-}
-
+saveRDS(
+  list(mc_wide    = mc_wide_cost,
+       mc_summary = mc_summary_cost,
+       dgp_grid   = dgp_grid_cost,
+       R          = R,
+       beta_true  = beta_true,
+       orientation = "cost"),
+  file = "code/simulations/cost_results.rds"
+)
+message("Experiment 2 complete: code/simulations/cost_results.rds")
 
 # =============================================================================
-# EXPERIMENT 3: Scaling model (production, alpha = 1)
+# EXPERIMENT 3: Scaling model (alpha = 1)
 # =============================================================================
 # Harmonised with the homogeneous DGP:
-#   x_i        = (1, z_i),  z_i ~ N(0, 1)
+#   x_i        = (1, x_i),  x_i ~ N(0, 1)
 #   beta_true  = (1, 0.5)
-#   z_det_i    = (z_det1, z_det2),  z_det1 ~ N(0, 1) and z_det2 ~ N(0, 1)
+#   z_i        = (z_{1i}, z_{2i}),  z_1 ~ N(0, 1) and z_2 ~ N(0, 1)
 #                independent of z_i and of each other
-#   b_i        = b_true * exp(-z_det_i' delta_true)
+#   b_i        = b_true * exp(-z_i' delta_true)
 #   u_i        ~ Exp(b_i)     (alpha = 1, the exponential corollary)
-#   Y_i | u_i  ~ Poisson(exp(x_i' beta_true - u_i))
+#   Y_i | u_i  ~ Poisson(exp(x_i' beta_true +/- u_i))
 
 beta_sc_true <- beta_true   # same as Experiments 1-2
 b_sc_true    <- 2
 
 delta_scenarios <- list(
-  list(id = 0L, label = "Null (0, 0)",            delta = c( 0.0,  0.0)),
-  list(id = 1L, label = "Weak (0.3, 0.2)",        delta = c( 0.3,  0.2)),
-  list(id = 2L, label = "Strong (1.0, 0.5)",      delta = c( 1.0,  0.5)),
-  list(id = 3L, label = "Sign-rev (0.8, -0.4)",   delta = c( 0.8, -0.4))
+  list(id = 1L, label = "Weak (0.3, 0.2)",        delta = c( 0.3,  0.2), orientation = "production"),
+  list(id = 2L, label = "Strong (1.0, 0.5)",      delta = c( 1.0,  0.5), orientation = "production"),
+  list(id = 3L, label = "Weak (0.3, 0.2)",        delta = c( 0.3,  0.2), orientation = "cost"),
+  list(id = 4L, label = "Strong (1.0, 0.5)",      delta = c( 1.0,  0.5), orientation = "cost")
 )
 
-
-# ---- Scaling NLLs (inlined for parallel-worker portability) ----------------
-nll_scaling <- function(params, y, X, Z) {
-  k    <- ncol(X); m <- ncol(Z)
-  beta <- params[seq_len(k)]
-  b    <- exp(params[k + 1L])
-  delt <- params[(k + 2L):(k + 1L + m)]
-  a    <- drop(X %*% beta)
-  b_i  <- b * exp(-drop(Z %*% delt))
-  if (any(!is.finite(b_i)) || any(b_i < 1e-6) || any(b_i > 1e5)) return(1e15)
-  lp <- log(b_i) - b_i * a - lgamma(y + 1) +
-    lgamma(y + b_i) +
-    suppressWarnings(pgamma(exp(pmin(a, 700)), shape = y + b_i,
-                            rate = 1, log.p = TRUE))
-  if (!all(is.finite(lp))) return(1e15)
-  -sum(lp)
-}
-
-nll_homo_sc <- function(params, y, X) {
-  k    <- ncol(X)
-  beta <- params[seq_len(k)]
-  b    <- exp(params[k + 1L])
-  if (!is.finite(b) || b < 1e-6 || b > 1e5) return(1e15)
-  a  <- drop(X %*% beta)
-  lp <- log(b) - b * a - lgamma(y + 1) + lgamma(y + b) +
-    suppressWarnings(pgamma(exp(pmin(a, 700)), shape = y + b,
-                            rate = 1, log.p = TRUE))
-  if (!all(is.finite(lp))) return(1e15)
-  -sum(lp)
-}
-
-te_exp_scaling <- function(y, a, b_i) {
-  log_r <- lgamma(y + b_i + 1) +
-    pgamma(exp(pmin(a, 700)), shape = y + b_i + 1, rate = 1, log.p = TRUE) -
-    lgamma(y + b_i) -
-    pgamma(exp(pmin(a, 700)), shape = y + b_i,     rate = 1, log.p = TRUE)
-  exp(-a + log_r)
-}
-
-
 # ---- Single-replication worker for the scaling experiment -----------------
-run_one_scaling <- function(seed, n, delta_true) {
+# Both the homogeneous and scaling fits are produced by countSFA's native
+# fit_poisson_frontier(): the scaling model is selected by passing a Z matrix
+# of inefficiency determinants; orientation flips between production and cost.
+# Efficiency scores use countSFA::efficiency_scores(), which internally honours
+# the Z slot of the fit object.
+
+run_one_scaling <- function(seed, n, delta_true,
+                            orientation = c("production", "cost")) {
+
+  orientation <- match.arg(orientation)
+  sign_u      <- if (orientation == "production") -1 else +1
 
   set.seed(seed)
 
-  z       <- rnorm(n)                  # same backbone as Experiments 1-2
-  z_det1  <- rnorm(n)
-  z_det2  <- rnorm(n)
-  X       <- cbind(1, z)
-  Z       <- cbind(z_det1, z_det2)
+  x_1     <- rnorm(n)                  # same backbone as Experiments 1-2
+  z_1     <- rnorm(n)
+  z_2     <- rnorm(n)
+  X       <- cbind(1, x_1)
+  Z       <- cbind(z_1, z_2)
 
-  b_i_true <- b_sc_true * exp(-(Z %*% delta_true))
+  b_i_true <- b_sc_true * exp(-drop(Z %*% delta_true))
   u        <- rexp(n, rate = b_i_true)
   a_true   <- drop(X %*% beta_sc_true)
-  y        <- rpois(n, exp(a_true - u))
+  y        <- rpois(n, exp(a_true + sign_u * u))
   te_true  <- exp(-u)
 
   k <- ncol(X); m <- ncol(Z)
 
-  # Poisson GLM warm start
-  glm_st <- suppressWarnings(
-    tryCatch(coef(glm(y ~ z, family = poisson())),
-             error = function(e) c(mean(log(y + 0.5)), 0))
-  )
-
-  # ---- Homogeneous MLE (warm start for scaling) ---------------------------
-  start_ho <- c(glm_st, log(b_sc_true))
-  lo_ho    <- c(rep(-10, k), -3)
-  hi_ho    <- c(rep( 10, k),  6)
-
+  # ---- Homogeneous MLE (countSFA native) ----------------------------------
   fit_ho <- tryCatch(
-    optim(start_ho, nll_homo_sc, y = y, X = X,
-          method  = "L-BFGS-B", lower = lo_ho, upper = hi_ho,
-          control = list(maxit = 2000, factr = 1e7),
-          hessian = TRUE),
+    suppressWarnings(fit_poisson_frontier(y, X, dist = "exponential",
+                                          orientation = orientation)),
     error = function(e) NULL
   )
-  if (is.null(fit_ho) || !is.finite(fit_ho$value)) {
-    fit_ho <- tryCatch(
-      optim(start_ho, nll_homo_sc, y = y, X = X,
-            method  = "Nelder-Mead",
-            control = list(maxit = 5000, reltol = 1e-9),
-            hessian = TRUE),
-      error = function(e) NULL
-    )
-  }
-
-  if (!is.null(fit_ho) && is.finite(fit_ho$value)) {
-    p_ho       <- fit_ho$par
-    beta_ho_h  <- p_ho[seq_len(k)]
-    b_ho_h     <- exp(p_ho[k + 1L])
-    ll_ho      <- -fit_ho$value
-    conv_ho    <- fit_ho$convergence
-    vcv_ho     <- tryCatch(solve(fit_ho$hessian),
-                           error = function(e) matrix(NA_real_, k + 1L, k + 1L))
-    se_ho_raw  <- sqrt(pmax(diag(vcv_ho), 0))
-    se_b_ho    <- b_ho_h * se_ho_raw[k + 1L]
-    a_ho_h     <- drop(X %*% beta_ho_h)
-    te_ho      <- te_exp_scaling(y, a_ho_h, b_ho_h)
-    mae_ho     <- mean(abs(te_ho - te_true), na.rm = TRUE)
+  if (!is.null(fit_ho)) {
+    beta_ho_h <- unname(fit_ho$coefficients)
+    b_ho_h    <- fit_ho$b
+    se_ho     <- unname(fit_ho$se)
+    se_b_ho   <- fit_ho$se_b
+    ll_ho     <- fit_ho$loglik
+    conv_ho   <- fit_ho$convergence
+    te_ho     <- tryCatch(efficiency_scores(fit_ho, y, X)$eff_score,
+                          error = function(e) rep(NA_real_, n))
+    mae_ho    <- mean(abs(te_ho - te_true), na.rm = TRUE)
   } else {
-    beta_ho_h  <- rep(NA_real_, k); b_ho_h <- NA_real_
-    ll_ho      <- NA_real_; conv_ho <- 99L
-    se_ho_raw  <- rep(NA_real_, k + 1L); se_b_ho <- NA_real_
-    te_ho      <- rep(NA_real_, n); mae_ho <- NA_real_
+    beta_ho_h <- rep(NA_real_, k); b_ho_h <- NA_real_
+    se_ho     <- rep(NA_real_, k); se_b_ho <- NA_real_
+    ll_ho     <- NA_real_; conv_ho <- 99L
+    te_ho     <- rep(NA_real_, n); mae_ho <- NA_real_
   }
 
-  # ---- Scaling MLE --------------------------------------------------------
-  start_sc <- if (!is.null(fit_ho) && is.finite(fit_ho$value))
-    c(fit_ho$par, rep(0, m))
-  else
-    c(glm_st, log(b_sc_true), rep(0, m))
-
-  lo_sc <- c(rep(-10, k), -3, rep(-5, m))
-  hi_sc <- c(rep( 10, k),  6, rep( 5, m))
-
+  # ---- Scaling MLE (countSFA native, via Z argument) ----------------------
   fit_sc <- tryCatch(
-    optim(start_sc, nll_scaling, y = y, X = X, Z = Z,
-          method  = "L-BFGS-B", lower = lo_sc, upper = hi_sc,
-          control = list(maxit = 2000, factr = 1e7),
-          hessian = TRUE),
+    suppressWarnings(fit_poisson_frontier(y, X, dist = "exponential", Z = Z,
+                                          orientation = orientation)),
     error = function(e) NULL
   )
-  if (is.null(fit_sc) || !is.finite(fit_sc$value)) {
-    fit_sc <- tryCatch(
-      optim(start_sc, nll_scaling, y = y, X = X, Z = Z,
-            method  = "Nelder-Mead",
-            control = list(maxit = 8000, reltol = 1e-9),
-            hessian = TRUE),
-      error = function(e) NULL
-    )
-  }
-
-  if (!is.null(fit_sc) && is.finite(fit_sc$value)) {
-    p_sc       <- fit_sc$par
-    beta_sc_h  <- p_sc[seq_len(k)]
-    b_sc_h     <- exp(p_sc[k + 1L])
-    delta_h    <- p_sc[(k + 2L):(k + 1L + m)]
-    ll_sc      <- -fit_sc$value
+  if (!is.null(fit_sc)) {
+    beta_sc_h  <- unname(fit_sc$coefficients)
+    b_sc_h     <- fit_sc$b
+    delta_h    <- unname(fit_sc$delta)
+    se_beta_sc <- unname(fit_sc$se)
+    se_b_sc    <- fit_sc$se_b
+    se_delta   <- unname(fit_sc$se_delta)
+    ll_sc      <- fit_sc$loglik
     conv_sc    <- fit_sc$convergence
-    vcv_sc     <- tryCatch(solve(fit_sc$hessian),
-                           error = function(e) matrix(NA_real_,
-                                                      k + 1L + m, k + 1L + m))
-    se_sc_raw  <- sqrt(pmax(diag(vcv_sc), 0))
-    se_beta_sc <- se_sc_raw[seq_len(k)]
-    se_b_sc    <- b_sc_h * se_sc_raw[k + 1L]
-    se_delta   <- se_sc_raw[(k + 2L):(k + 1L + m)]
-    a_sc_h     <- drop(X %*% beta_sc_h)
-    bi_sc_h    <- b_sc_h * exp(-drop(Z %*% delta_h))
-    te_sc      <- te_exp_scaling(y, a_sc_h, bi_sc_h)
+    te_sc      <- tryCatch(efficiency_scores(fit_sc, y, X)$eff_score,
+                           error = function(e) rep(NA_real_, n))
     mae_sc     <- mean(abs(te_sc - te_true), na.rm = TRUE)
   } else {
     beta_sc_h  <- rep(NA_real_, k); b_sc_h <- NA_real_
@@ -605,15 +511,15 @@ run_one_scaling <- function(seed, n, delta_true) {
     se_delta   <- rep(NA_real_, m); mae_sc <- NA_real_
   }
 
-  # ---- Two-step (Wang & Schmidt 2002): homogeneous TE -> OLS on z_det -----
+  # ---- Two-step (Wang & Schmidt 2002): homogeneous TE -> OLS on z ---------
   delta_ts <- rep(NA_real_, m)
   if (!is.null(fit_ho) && all(is.finite(te_ho)) && all(te_ho > 0)) {
     neg_u_hat <- -log(pmax(te_ho, 1e-10))
-    ts_fit    <- tryCatch(lm(neg_u_hat ~ z_det1 + z_det2),
+    ts_fit    <- tryCatch(lm(neg_u_hat ~ z_1 + z_2),
                           error = function(e) NULL)
     if (!is.null(ts_fit)) {
       cf       <- coef(ts_fit)
-      delta_ts <- c(cf["z_det1"], cf["z_det2"])
+      delta_ts <- c(cf["z_1"], cf["z_2"])
     }
   }
 
@@ -621,6 +527,8 @@ run_one_scaling <- function(seed, n, delta_true) {
     pmax(2 * (ll_sc - ll_ho), 0) else NA_real_
 
   data.frame(
+    orientation = orientation,
+
     # Scaling MLE
     b1_sc=beta_sc_h[1], b2_sc=beta_sc_h[2],
     b_sc=b_sc_h, d1_sc=delta_h[1], d2_sc=delta_h[2],
@@ -631,7 +539,7 @@ run_one_scaling <- function(seed, n, delta_true) {
     # Homogeneous MLE
     b1_ho=beta_ho_h[1], b2_ho=beta_ho_h[2],
     b_ho=b_ho_h,
-    se_b1_ho=se_ho_raw[1], se_b2_ho=se_ho_raw[2],
+    se_b1_ho=se_ho[1], se_b2_ho=se_ho[2],
     se_b_ho=se_b_ho, ll_ho=ll_ho, conv_ho=conv_ho, mae_ho=mae_ho,
 
     # Two-step
@@ -644,53 +552,50 @@ run_one_scaling <- function(seed, n, delta_true) {
 
 
 # ---- Scaling main loop ----------------------------------------------------
-if (!file.exists("code/simulations/scaling_results.rds")) {
+R_sc        <- R                       # match homogeneous experiments
+mc_cores_sc <- mc_cores
 
-  R_sc        <- R                       # match homogeneous experiments
-  mc_cores_sc <- mc_cores
+set.seed(20250101L)
+results_scaling <- list()
+timing_sc       <- list()
 
-  set.seed(20250101L)
-  results_scaling <- list()
-  timing_sc       <- list()
+for (sc in delta_scenarios) {
+  sid  <- sc$id
+  d_tr <- sc$delta
+  sc_k <- paste0("scenario_", sid)
+  sc_orientation <- sc$orientation
+  results_scaling[[sc_k]] <- list()
 
-  for (sc in delta_scenarios) {
-    sid  <- sc$id
-    d_tr <- sc$delta
-    sc_k <- paste0("scenario_", sid)
-    results_scaling[[sc_k]] <- list()
+  for (n_val in n_vals) {
+    message(sprintf("Scenario %d (%s) | n = %d | starting...",
+                    sid, sc_orientation, n_val))
+    t0    <- proc.time()["elapsed"]
+    seeds <- sample.int(.Machine$integer.max, R_sc)
 
-    for (n_val in n_vals) {
-      message(sprintf("Scenario %d | n = %d | starting...", sid, n_val))
-      t0    <- proc.time()["elapsed"]
-      seeds <- sample.int(.Machine$integer.max, R_sc)
+    reps <- parallel::mclapply(seeds, function(s)
+      tryCatch(run_one_scaling(s, n_val, d_tr, sc_orientation),
+               error = function(e) NULL),
+      mc.cores = mc_cores_sc
+    )
+    reps_df             <- do.call(rbind, Filter(Negate(is.null), reps))
+    reps_df$scenario    <- sid
+    reps_df$n           <- n_val
+    results_scaling[[sc_k]][[as.character(n_val)]] <- reps_df
 
-      reps <- parallel::mclapply(seeds, function(s)
-        tryCatch(run_one_scaling(s, n_val, d_tr), error = function(e) NULL),
-        mc.cores = mc_cores_sc
-      )
-      reps_df          <- do.call(rbind, Filter(Negate(is.null), reps))
-      reps_df$scenario <- sid
-      reps_df$n        <- n_val
-      results_scaling[[sc_k]][[as.character(n_val)]] <- reps_df
-
-      elapsed <- proc.time()["elapsed"] - t0
-      timing_sc[[paste0(sc_k, "_n", n_val)]] <- elapsed
-      message(sprintf("Scenario %d | n = %d | done in %.1f sec.",
-                      sid, n_val, elapsed))
-    }
+    elapsed <- proc.time()["elapsed"] - t0
+    timing_sc[[paste0(sc_k, "_n", n_val)]] <- elapsed
+    message(sprintf("Scenario %d (%s) | n = %d | done in %.1f sec.",
+                    sid, sc_orientation, n_val, elapsed))
   }
-
-  saveRDS(
-    list(results         = results_scaling,
-         timing          = timing_sc,
-         beta_true       = beta_sc_true,
-         b_true          = b_sc_true,
-         delta_scenarios = delta_scenarios,
-         R               = R_sc),
-    file = "code/simulations/scaling_results.rds"
-  )
-  message("Experiment 3 (scaling) complete: code/simulations/scaling_results.rds")
-
-} else {
-  message("Experiment 3 (scaling) results exist; skipping.")
 }
+
+saveRDS(
+  list(results         = results_scaling,
+       timing          = timing_sc,
+       beta_true       = beta_sc_true,
+       b_true          = b_sc_true,
+       delta_scenarios = delta_scenarios,
+       R               = R_sc),
+  file = "code/simulations/scaling_results.rds"
+)
+message("Experiment 3 (scaling) complete: code/simulations/scaling_results.rds")
