@@ -1,0 +1,365 @@
+# The Model {#sec-model}
+
+```{r}
+#| label: setup-02
+#| include: false
+library(countSFA)
+library(ggplot2)
+library(patchwork)
+```
+
+Let $Y_i$ denote a non-negative integer output for unit $i = 1, \ldots, n$, and let $\mathbf{x}_i \in \mathbb{R}^k$ be a vector of observed inputs. The frontier specification posits a maximum (or minimum) expected output level $\lambda_i = \lambda(\mathbf{x}_i;\, \boldsymbol{\beta}) > 0$ from which each unit's realised output is displaced by a one-sided random factor. We treat production and cost frontiers in parallel through
+
+$$
+Y_i \mid u_i,\, \mathbf{x}_i \;\sim\;
+   \mathrm{Poisson}\!\left(\lambda(\mathbf{x}_i;\boldsymbol{\beta})\, e^{\mp u_i}\right),
+\qquad u_i \geq 0,
+$$ {#eq-conditional}
+
+where the upper sign defines the *production frontier*, where $\lambda_i$ is an upper bound on the conditional mean, and the lower sign defines the *cost frontier*, where $\lambda_i$ is a lower bound. Throughout, $\boldsymbol{\beta}$ is the frontier parameter vector, $u_i \geq 0$ is the technical inefficiency, and the triples $(Y_i, u_i, \mathbf{x}_i)$ are independent across units. We write
+
+$$
+a_i \;\equiv\; a(\mathbf{x}_i;\,\boldsymbol{\beta})
+   \;=\; \log\lambda(\mathbf{x}_i;\,\boldsymbol{\beta})
+$$ {#eq-loglink}
+
+for the log-frontier mean. The closed-form derivations that follow require only that $\lambda(\mathbf{x}_i;\,\boldsymbol{\beta})$ be positive, and they make no use of any specific functional form. For estimation, simulation, and the empirical application we adopt the canonical log-linear specification $\lambda(\mathbf{x}_i;\,\boldsymbol{\beta}) = \exp(\mathbf{x}_i'\boldsymbol{\beta})$, under which $a_i = \mathbf{x}_i'\boldsymbol{\beta}$. Nonlinear or semiparametric forms are admissible at no cost to the marginal PMF or to the conditional efficiency score.
+
+The specification follows the count-data frontier of @feHofler2013. In either orientation, however, their half-normal inefficiency leaves the marginal PMF as a one-dimensional integral that the package evaluates by maximum simulated likelihood with Halton sequences. The Gamma family adopted below yields a closed-form alternating series in the production case and a one-dimensional integral with a uniformly damped integrand in the cost case, permitting exact likelihood evaluation without simulation.
+
+## Inefficiency Distribution
+
+Following @greene1990 in the continuous frontier literature, we model
+
+$$
+u_i \mid \alpha,\, b \;\sim\; \mathrm{Gamma}(\alpha,\, b),
+\qquad \alpha > 0,\; b > 0,
+$$ {#eq-gamma-dist}
+
+with density $f(u;\, \alpha, b) = b^\alpha u^{\alpha - 1} e^{-bu} / \Gamma(\alpha)$ for $u \geq 0$ (rate parameterisation) and moments
+
+$$
+\mathrm{E}[u_i] \;=\; \frac{\alpha}{b},
+\qquad
+\mathrm{Var}[u_i] \;=\; \frac{\alpha}{b^2}.
+$$ {#eq-gamma-moments}
+
+The shape parameter $\alpha$ governs the *form* of the inefficiency distribution independently of its scale. When $\alpha < 1$ the density is decreasing on $[0, \infty)$ with mode at zero. When $\alpha = 1$ it is exactly exponential, and we recover a count-data analogue of that classical specification of @meeusenBroeck1977. When $\alpha > 1$ the density is hump-shaped with an interior mode at $(\alpha - 1)/b > 0$, implying that very small inefficiency is no more likely than some positive reference level. The latter case is economically important: in sectors where all producers face an irreducible level of inefficiency, e.g., regulatory compliance costs, adjustment lags, or organisational slack, a distribution with an interior mode more accurately reflects the data-generating process. The rate $b$ is a scale parameter: large $b$ concentrates inefficiency near zero so that nearly all units approach the frontier; small $b$ implies widespread and severe inefficiency.
+
+## Marginal PMF
+
+::: {#prp-pmf}
+
+## Marginal PMF under Gamma inefficiency
+
+Let $u_i \sim \mathrm{Gamma}(\alpha, b)$ as in @eq-gamma-dist. Under @eq-conditional, the marginal probability mass function of $Y_i$ takes the following two forms.
+
+*(i) Production frontier* $\bigl(Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{-u_i})\bigr)$. Marginalising over $u_i$ yields the absolutely convergent alternating-series representation
+
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
+\;=\; \frac{b^\alpha\, e^{a_i y}}{y!}
+  \sum_{j=0}^{\infty}
+    \frac{(-1)^j\, e^{j a_i}}{j!\;(y + b + j)^\alpha},
+$$ {#eq-pmf-gamma}
+
+for all $a_i < \infty$, $b > 0$, $\alpha > 0$, and
+$y \in \{0, 1, 2, \ldots\}$.
+
+*(ii) Cost frontier* $\bigl(Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{+u_i})\bigr)$. No analogous closed-form series exists; the marginal PMF is the one-dimensional integral
+
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
+\;=\; \frac{b^\alpha\, e^{a_i y}}{y!\,\Gamma(\alpha)}
+  \int_0^\infty u^{\alpha - 1}\,
+     \exp\!\bigl((y - b)\,u \,-\, e^{a_i + u}\bigr)\,\mathrm{d}u,
+$$ {#eq-pmf-gamma-cost}
+
+whose integrand is super-exponentially damped as $u \to \infty$ and integrable at $u = 0^+$ for every $\alpha > 0$, so the integral is finite for all $b > 0$ and can be approximated by adaptive quadrature.
+:::
+
+The series in @eq-pmf-gamma converges absolutely because the ratio of consecutive absolute term sizes is
+
+$$
+\frac{|t_{j+1}|}{|t_j|}
+= \underbrace{\frac{e^{a_i}}{j+1}}_{\text{geometric, } \alpha\text{-free}} \cdot
+  \underbrace{\left(\frac{y+b+j}{y+b+j+1}\right)^\alpha}_{\text{polynomial, decays faster as } \alpha\text{ grows}}
+\;\to\; 0 \quad \text{as } j \to \infty.
+$$ {#eq-pmf-ratio}
+
+The leading factor in @eq-pmf-ratio is $\alpha$-free and drives the asymptotic convergence: once $j > e^{a_i}$ the ratio is below 1 regardless of $\alpha$. The second factor is the $\alpha$-dependent polynomial correction. Since $(y+b+j)/(y+b+j+1) \in (0,1)$, raising it to a power larger than 1 pushes it strictly below the linear baseline, accelerating decay; raising it to a power smaller than 1 pulls it back toward 1, so for $\alpha \ll 1$ the term-ratio is essentially $e^{a_i}/(j+1)$ alone. The size of $|t_K|$ at any truncation $K$ inherits the same monotonicity: applying Stirling's approximation $K! \sim K^K e^{-K}\sqrt{2\pi K}$ in $|t_K| = e^{K a_i}\bigl/\bigl[K!\,(y+b+K)^\alpha\bigr]$ gives
+$$
+\log|t_K| \;\approx\; K\,\bigl(a_i + 1 - \log K\bigr) \;-\; \bigl(\alpha + \tfrac{1}{2}\bigr)\log K \;+\; \mathrm{const},
+$$ {#eq-pmf-tail}
+where the first, $\alpha$-free term comes from the factorial and the second is the $\alpha$-dependent polynomial correction. For $K = c\,e^{a_i}$ with $c>1$, the first term reduces to $-c(\log c - 1)\, e^{a_i}$, super-exponentially small in $e^{a_i}$; the polynomial $-(\alpha + 1/2)\log K$ shrinks $|t_K|$ further when $\alpha \geq 1$ but contributes little once $\alpha \to 0^+$.
+
+Demanding $|t_K| < \varepsilon$ and solving @eq-pmf-tail for $K$ at fixed $a_i$ therefore gives an $\alpha$-aware rule
+$$
+K \;\geq\; 3\, e^{a_i} \cdot \max\bigl(1,\; 1/\alpha\bigr),
+$$ {#eq-pmf-K-rule}
+i.e.\ $K \geq 3\, e^{a_i}$ suffices once $\alpha \geq 1$, while $K \geq 3\, e^{a_i}/\alpha$ is recommended in the sub-exponential regime $\alpha < 1$. The implementation in §4 uses this rule.
+
+### The Exponential Corollary {#sec-pmf-exp}
+
+Setting $\alpha = 1$ collapses the alternating series @eq-pmf-gamma to a closed form involving the lower incomplete gamma function. The Taylor expansion of $\gamma(s, x) = \int_0^x t^{s-1} e^{-t}\,\mathrm{d}t$ about $x = 0$ is
+$$
+\gamma(s,\, x) \;=\; \sum_{j=0}^\infty \frac{(-1)^j x^{s+j}}{j!\,(s+j)},
+$$
+so evaluating at $s = y + b$ and $x = e^{a_i}$ and multiplying through by $e^{-b a_i}$ gives
+$$
+e^{-b a_i}\,\gamma(y+b,\, e^{a_i})
+\;=\; e^{a_i y} \sum_{j=0}^\infty \frac{(-1)^j e^{j a_i}}{j!\,(y+b+j)},
+$$
+so that @eq-pmf-gamma at $\alpha = 1$ becomes a multiple of $\gamma(y+b,\, e^{a_i})$. The cost case admits a parallel closed form via the direct change of variable $t = e^{a_i + u}$ in @eq-pmf-gamma-cost at $\alpha = 1$: this sends $u \in [0, \infty)$ to $t \in [e^{a_i}, \infty)$ and collapses the integrand to $t^{y - b - 1}\, e^{-t}\, e^{-(y-b)a_i}$, whose integral is $e^{-(y-b)a_i}\,\Gamma(y - b,\,e^{a_i})$.
+
+::: {#cor-pmf-exp}
+
+## Exponential closed form
+
+When $\alpha = 1$ the marginal PMFs reduce to
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, b)
+\;=\; \frac{b\, e^{-b a_i}}{y!}\;\gamma\!\left(y + b,\; e^{a_i}\right)
+$$ {#eq-pmf-exp}
+
+in the production frontier, and to
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, b)
+\;=\; \frac{b\, e^{a_i b}}{y!}\;\Gamma\!\left(y - b,\; e^{a_i}\right)
+$$ {#eq-cost-pmf}
+
+in the cost frontier, where $\gamma(s, x) = \int_0^x t^{s-1} e^{-t}\,\mathrm{d}t$ and $\Gamma(s, x) = \int_x^\infty t^{s-1} e^{-t}\,\mathrm{d}t$ denote the lower and upper incomplete gamma functions respectively.
+:::
+
+The two cases are structurally symmetric: the sign of $a_i b$ in the multiplying factor flips, the lower and upper incomplete gamma exchange, and to our knowledge the cost-frontier closed form @eq-cost-pmf has not previously been derived for count-data frontiers. In the half-normal model of @feHofler2013 both orientations require simulated likelihood, whereas here both admit exact evaluation through standard special functions.
+
+::: {.remark title="Frontier constraint and the incomplete gamma"}
+The incompleteness of the gamma function in @eq-pmf-exp and @eq-cost-pmf is not a computational device but the algebraic consequence of the one-sided constraint $u_i \geq 0$. In the production case the change of variable $s = \lambda_i e^{-u_i}$ runs over $(0, \lambda_i]$, restricting the resulting integral to the lower incomplete gamma; in the cost case $t = \lambda_i e^{+u_i}$ runs over $[\lambda_i, \infty)$ and produces the upper incomplete gamma. Relaxing $u_i \geq 0$ to $u_i \in \mathbb{R}$ would extend each integral to all of $(0, \infty)$, replacing the incomplete gamma with the complete $\Gamma(y+b)$, and recovering the negative binomial PMF of an unconstrained Poisson--Gamma mixture [@cameronTrivedi2005, Ch. 20]. The frontier model is therefore econometrically distinct from a negative binomial regression precisely because the gamma function in its likelihood is incomplete.
+:::
+
+::: {.remark title="Negative shape arguments in the cost-frontier PMF"}
+The upper incomplete gamma $\Gamma(s, x) = \int_x^\infty t^{s-1} e^{-t}\,\mathrm{d}t$ is well-defined for any real $s$ whenever $x > 0$: the exponential decay of $e^{-t}$ dominates the polynomial factor $t^{s-1}$ irrespective of the sign of
+$s - 1$, and the lower limit $x = e^{a_i} > 0$ keeps the integrand away from any singularity at the origin. For count data with $y \geq 0$ and $b > 0$ the argument $y - b$ in @eq-cost-pmf can be negative (e.g.\ $y = 0$, $b = 1$
+gives $s = -1$), but $\Gamma(y - b,\, e^{a_i})$ remains finite. Standard regularised-incomplete-gamma routines distributed with most statistical software require shape $> 0$; the unnormalised upper incomplete gamma at arbitrary real shape is available through GSL-compatible numerical libraries via the standard recurrence and continued-fraction expansions, or one can evaluate the integral @eq-pmf-gamma-cost directly by quadrature.
+:::
+
+@fig-pmf-shape illustrates the marginal PMF under two parameter sweeps at fixed frontier mean $\lambda_i = \exp(a_i) = 8$. The left panel shows the exponential case ($\alpha = 1$) as the rate $b$ decreases from 5 toward 0.5: probability mass shifts leftward and the distribution becomes progressively heavier-tailed compared with the Poisson reference, reflecting the increasing prevalence and severity of inefficiency. The right panel shows how the shape parameter $\alpha$ at fixed $b = 1$ reshapes the same distribution: as $\alpha$ rises from $0.5$ (decreasing inefficiency density) toward $4$ (strongly hump-shaped density), the PMF concentrates because the inefficiency density rules out near-zero values; conversely $\alpha < 1$ produces a
+heavier left tail than the exponential, as the monotone-decreasing density assigns positive probability to arbitrarily large inefficiency values.
+
+```{r}
+#| label: fig-pmf-shape
+#| fig-width: 8
+#| fig-height: 3.5
+#| out-width: "100%"
+#| fig-cap: "Marginal PMF of $Y_i$ for $\\lambda_i = \\exp(a_i) = 8$ under two parameter sweeps. Left panel: exponential inefficiency ($\\alpha = 1$), four rate values $b \\in \\{0.5, 1, 2, 5\\}$. Right panel: Gamma inefficiency at fixed $b = 1$, four shape values $\\alpha \\in \\{0.5, 1, 2, 4\\}$. Grey bars: Poisson($\\lambda_i$) reference, attained as $b \\to \\infty$ (left panel) or as $\\alpha \\to \\infty$ at fixed mean (right panel)."
+
+a_val      <- log(8)
+y_seq      <- 0:25
+b_vals     <- c(0.5, 1, 2, 5)
+alpha_vals <- c(0.5, 1, 2, 4)
+
+# Exponential sweep: vary b at alpha = 1
+df_b <- do.call(rbind, lapply(b_vals, function(b_val) {
+  pmf_vals <- sapply(y_seq, function(y)
+    exp(pmf_poisson_gamma(y, a_val, b = b_val, alpha = 1L)))
+  data.frame(y = y_seq, pmf = pmf_vals,
+             lvl = factor(sprintf("b == %g", b_val),
+                          levels = sprintf("b == %g", b_vals)))
+}))
+
+# Gamma sweep: vary alpha at b = 1
+df_a <- do.call(rbind, lapply(alpha_vals, function(al) {
+  pmf_vals <- sapply(y_seq, function(y)
+    exp(pmf_poisson_gamma(y, a_val, b = 1, alpha = al)))
+  data.frame(y = y_seq, pmf = pmf_vals,
+             lvl = factor(sprintf("alpha == %g", al),
+                          levels = sprintf("alpha == %g", alpha_vals)))
+}))
+
+# Shared Poisson reference
+pois_ref <- data.frame(y = y_seq, pmf = dpois(y_seq, lambda = exp(a_val)))
+
+# Panel builder: one PMF overlay on the Poisson reference, with the
+# parameter sweep encoded by colour, linetype, and shape; legend placed
+# inside the panel so each subplot is self-contained.
+mk_panel <- function(df, title) {
+  ggplot() +
+    geom_col(data = pois_ref, aes(x = y, y = pmf),
+             fill = "grey80", colour = "grey60", width = 0.8) +
+    geom_line(data = df,
+              aes(x = y, y = pmf, colour = lvl, linetype = lvl),
+              linewidth = 0.7) +
+    geom_point(data = df,
+               aes(x = y, y = pmf, colour = lvl, shape = lvl),
+               size = 1.4) +
+    scale_colour_brewer(palette = "Dark2", name = NULL,
+                        labels = scales::parse_format()) +
+    scale_linetype_discrete(name = NULL,
+                            labels = scales::parse_format()) +
+    scale_shape_discrete(name = NULL,
+                         labels = scales::parse_format()) +
+    labs(title = title,
+         x = expression(italic(y)), y = "Probability") +
+    theme_bw(base_size = 10) +
+    theme(legend.position = "inside",
+          legend.position.inside = c(0.82, 0.72),
+          legend.background = element_rect(fill = "white", colour = NA),
+          plot.title = element_text(size = 10))
+}
+
+p_b <- mk_panel(df_b, "Exponential (\u03b1 = 1): varying b")
+p_a <- mk_panel(df_a, "Gamma (b = 1): varying \u03b1")
+
+p_b + p_a + plot_layout(ncol = 2)
+```
+
+## Technical Efficiency Scores
+
+Following standard practice in stochastic frontier analysis [@kumbhakarLovell2000, Ch. 2], the technical efficiency of unit $i$ is defined as the conditional expectation of the efficiency factor $e^{-u_i}$ given the observed count,
+
+$$
+\widehat{\mathrm{TE}}_i
+\;\equiv\; \mathrm{E}\!\left[e^{-u_i} \mid Y_i = y_i,\; \mathbf{x}_i\right].
+$$ {#eq-te-def}
+
+This decomposition separates the one-sided inefficiency from the Poisson noise using the full likelihood structure [@JLMS:1982].
+
+::: {#prp-te}
+
+## Conditional efficiency score under Gamma inefficiency
+
+Under the Gamma inefficiency assumption @eq-gamma-dist and the conditional model @eq-conditional, the conditional technical efficiency takes the following two forms.
+
+*(i) Production frontier.*
+
+$$
+\mathrm{E}\!\left[e^{-u_i} \mid Y_i = y_i,\, \mathbf{x}_i\right]
+\;=\;
+\frac{\displaystyle\sum_{j=0}^\infty
+        \dfrac{(-1)^j e^{j a_i}}{j!\,(y_i + b + 1 + j)^\alpha}}
+     {\displaystyle\sum_{j=0}^\infty
+        \dfrac{(-1)^j e^{j a_i}}{j!\,(y_i + b + j)^\alpha}}.
+$$ {#eq-te-gamma}
+
+*(ii) Cost frontier.*
+
+$$
+\mathrm{E}\!\left[e^{-u_i} \mid Y_i = y_i,\, \mathbf{x}_i\right]
+\;=\;
+\frac{\displaystyle\int_0^\infty u^{\alpha-1}\,
+        \exp\!\bigl((y_i - b - 1)\,u - e^{a_i + u}\bigr)\,\mathrm{d}u}
+     {\displaystyle\int_0^\infty u^{\alpha-1}\,
+        \exp\!\bigl((y_i - b)\,u - e^{a_i + u}\bigr)\,\mathrm{d}u}.
+$$ {#eq-te-gamma-cost}
+
+Both integrals are finite for all $b > 0$ and $\alpha > 0$ by the finiteness argument used for @eq-pmf-gamma-cost; numerical quadrature is required for the cost case.
+:::
+
+The score lies in $(0, 1)$ for all parameter values: $u_i \geq 0$ implies $e^{-u_i} \in (0, 1]$ almost surely, so the conditional mean is too. The dependence on the data enters entirely through $y_i$ (the observed count) and $a_i$ (the fitted
+log-frontier for unit $i$): a unit with $y_i = 0$ but a large frontier mean $\lambda_i$ receives a low score in the production case, correctly diagnosing severe inefficiency; as $b \to \infty$, the score converges uniformly to $1$ in either orientation.
+
+### The Exponential Corollary {#sec-te-exp}
+
+At $\alpha = 1$ the production series in @eq-te-gamma satisfies $\sum_{j=0}^\infty (-1)^j e^{ja_i}/[j!(y_i+b+1+j)] = e^{-(y_i+b+1)a_i}\,\gamma(y_i+b+1,\, e^{a_i})$ by the same Taylor identity used in @cor-pmf-exp, and analogously the denominator equals $e^{-(y_i+b)a_i}\,\gamma(y_i+b,\, e^{a_i})$. The cost-frontier integrals admit the parallel closed form via the direct substitution $t = e^{a_i + u}$, which yields $\int_0^\infty \exp\bigl((y_i - b - 1)u - e^{a_i + u}\bigr)\,\mathrm{d}u = e^{-(y_i - b - 1)a_i}\,\Gamma(y_i - b - 1,\, e^{a_i})$ in the numerator and $e^{-(y_i - b)a_i}\,\Gamma(y_i - b,\, e^{a_i})$ in the denominator.
+
+::: {#cor-te-exp}
+
+## Exponential closed form
+
+When $\alpha = 1$ the conditional efficiency score reduces to
+$$
+\mathrm{E}\!\left[e^{-u_i} \mid Y_i = y_i,\, \mathbf{x}_i\right]
+\;=\; e^{-a_i}\cdot
+  \frac{\gamma\!\left(y_i + b + 1,\; e^{a_i}\right)}
+       {\gamma\!\left(y_i + b,\; e^{a_i}\right)}
+$$ {#eq-te-formula}
+
+in the production frontier, and to
+$$
+\mathrm{E}\!\left[e^{-u_i} \mid Y_i = y_i,\, \mathbf{x}_i\right]
+\;=\; e^{a_i}\cdot
+  \frac{\Gamma\!\left(y_i - b - 1,\; e^{a_i}\right)}
+       {\Gamma\!\left(y_i - b,\; e^{a_i}\right)}
+$$ {#eq-te-formula-cost}
+
+in the cost frontier.
+:::
+
+The structural symmetry of @cor-pmf-exp carries over: the sign on $a_i$ in the prefactor flips, and the lower and upper incomplete gamma exchange (with the shape arguments $y_i + b$, $y_i + b + 1$ replaced by $y_i - b$, $y_i - b - 1$). Both forms require no quadrature.
+
+@fig-te-shape illustrates how the conditional efficiency score $\widehat{\mathrm{TE}}_i$ depends on the observed count $y_i$ at fixed log-frontier $a_i = \log 8$. The left panel fixes $\alpha = 1$ (exponential case) and varies $b$: higher $b$ (less inefficiency on average) compresses the score toward $1$ uniformly. The right panel fixes $b = 1$ (Gamma case) and varies $\alpha$: when $\alpha > 1$, the hump-shaped inefficiency density implies that units with low $y_i$ need not be viewed as severely inefficient, so the score is uniformly higher at low counts than under the exponential.
+
+```{r}
+#| label: fig-te-shape
+#| fig-width: 8
+#| fig-height: 3.5
+#| out-width: "100%"
+#| fig-cap: "Conditional technical efficiency score $\\widehat{\\mathrm{TE}}_i = \\mathrm{E}[e^{-u_i} \\mid Y_i = y_i,\\, \\mathbf{x}_i]$ as a function of observed count $y_i$, for fixed $a_i = \\log 8$. Left panel: exponential inefficiency ($\\alpha = 1$), four rate values $b \\in \\{0.5, 1, 2, 5\\}$; higher $b$ compresses the score toward $1$. Right panel: Gamma inefficiency at fixed $b = 1$, four shape values $\\alpha \\in \\{0.5, 1, 2, 4\\}$; $\\alpha > 1$ raises the score at low counts because the hump-shaped inefficiency density makes some positive $u_i$ expected, so observing $y_i = 0$ is less diagnostic of severe inefficiency. Dotted line: $\\widehat{\\mathrm{TE}} = 1$."
+
+# Left panel: exponential case (alpha = 1), closed-form via lgamma + pgamma.
+te_b <- do.call(rbind, lapply(b_vals, function(b_val) {
+  te_vals <- sapply(y_seq, function(y) {
+    log_r <- lgamma(y + b_val + 1) - lgamma(y + b_val) +
+      pgamma(exp(a_val), shape = y + b_val + 1, rate = 1, log.p = TRUE) -
+      pgamma(exp(a_val), shape = y + b_val,     rate = 1, log.p = TRUE)
+    exp(-a_val + log_r)
+  })
+  data.frame(y = y_seq, te = te_vals,
+             lvl = factor(sprintf("b == %g", b_val),
+                          levels = sprintf("b == %g", b_vals)))
+}))
+
+# Right panel: Gamma case at b = 1, alternating-series evaluator with
+# log-sum-exp guards.
+te_series <- function(y, a, b, alpha, delta = 0, K = 150L) {
+  kk <- 0:K
+  log_abs <- kk * a - lgamma(kk + 1) - alpha * log(y + b + delta + kk)
+  pos <- kk %% 2L == 0L
+  lse <- function(lv) { m <- max(lv); m + log(sum(exp(lv - m))) }
+  lse_p <- lse(log_abs[pos])
+  lse_n <- lse(log_abs[!pos])
+  if (lse_p <= lse_n) return(NA_real_)
+  exp(lse_p + log1p(-exp(lse_n - lse_p)))
+}
+
+te_a <- do.call(rbind, lapply(alpha_vals, function(al) {
+  te_vals <- sapply(y_seq, function(y) {
+    num <- te_series(y, a_val, b = 1, alpha = al, delta = 1)
+    den <- te_series(y, a_val, b = 1, alpha = al, delta = 0)
+    if (is.na(num) || is.na(den) || den <= 0) return(NA_real_)
+    num / den
+  })
+  data.frame(y = y_seq, te = te_vals,
+             lvl = factor(sprintf("alpha == %g", al),
+                          levels = sprintf("alpha == %g", alpha_vals)))
+}))
+
+# Panel builder: efficiency-score curves with the dotted TE = 1 reference;
+# legend placed inside each panel so the composite is self-contained.
+mk_te_panel <- function(df, title) {
+  ggplot(df, aes(x = y, y = te, colour = lvl, linetype = lvl)) +
+    geom_hline(yintercept = 1, linetype = "dotted", colour = "grey50") +
+    geom_line(linewidth = 0.85, na.rm = TRUE) +
+    geom_point(aes(shape = lvl), size = 1.4, na.rm = TRUE) +
+    scale_colour_brewer(palette = "Dark2", name = NULL,
+                        labels = scales::parse_format()) +
+    scale_linetype_discrete(name = NULL,
+                            labels = scales::parse_format()) +
+    scale_shape_discrete(name = NULL,
+                         labels = scales::parse_format()) +
+    scale_y_continuous(limits = c(0, 1.02), breaks = seq(0, 1, by = 0.2)) +
+    labs(title = title,
+         x = expression(Observed~count~italic(y[i])),
+         y = expression(widehat(TE)[i])) +
+    theme_bw(base_size = 10) +
+    theme(legend.position = "inside",
+          legend.position.inside = c(0.82, 0.28),
+          legend.background = element_rect(fill = "white", colour = NA),
+          plot.title = element_text(size = 10))
+}
+
+p_te_b <- mk_te_panel(te_b, "Exponential (\u03b1 = 1): varying b")
+p_te_a <- mk_te_panel(te_a, "Gamma (b = 1): varying \u03b1")
+
+p_te_b + p_te_a + plot_layout(ncol = 2)
+```

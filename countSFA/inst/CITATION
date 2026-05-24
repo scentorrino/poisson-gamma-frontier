@@ -1,0 +1,31 @@
+citHeader("To cite the methodology behind countSFA, please use:")
+
+bibentry(
+  bibtype = "Unpublished",
+  title   = "Count Data Stochastic Frontier Models with Gamma Inefficiency",
+  author  = c(
+    person("Samuele",  "Centorrino"),
+    person("Maria",    "Perez Urdiales")
+  ),
+  note    = "Working paper",
+  year    = "2026",
+  textVersion = paste(
+    "Centorrino, S. and Perez Urdiales, M. (2026).",
+    "Count Data Stochastic Frontier Models with Gamma Inefficiency.",
+    "Working paper."
+  )
+)
+
+bibentry(
+  bibtype = "Manual",
+  title   = "{countSFA}: Count-Data Stochastic Frontier Models",
+  author  = person("Samuele", "Centorrino"),
+  year    = sub("-.*", "", meta$Date %||% format(Sys.Date(), "%Y")),
+  note    = paste("R package version", meta$Version),
+  textVersion = paste0(
+    "Centorrino, S. (",
+    sub("-.*", "", meta$Date %||% format(Sys.Date(), "%Y")),
+    "). countSFA: Count-Data Stochastic Frontier Models. ",
+    "R package version ", meta$Version, "."
+  )
+)

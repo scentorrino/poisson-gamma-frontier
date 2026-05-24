@@ -1,0 +1,82 @@
+\usepackage{accents,setspace,graphicx,srcltx,enumitem}
+\usepackage[noblocks]{authblk}
+\renewcommand*{\Authsep}{, }
+\renewcommand*{\Authand}{, }
+\renewcommand*{\Authands}{, }
+\renewcommand\Affilfont{\small} 
+%% Change the default page sizes.
+
+\setlength{\topmargin}{-0.25in}
+\setlength{\textheight}{9in}
+\setlength{\oddsidemargin}{.0in}
+\setlength{\evensidemargin}{.0in}
+\setlength{\textwidth}{6.5in}
+\setlength{\footskip}{.5in}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{amsxtra}
+\usepackage{amstext}
+\usepackage{subcaption}
+\usepackage{bbm}
+\usepackage[english]{babel}
+\usepackage{hyperref}
+\usepackage{pgfplots}
+\usepackage{booktabs}
+\usepgfplotslibrary{fillbetween}
+\usetikzlibrary{patterns}
+
+ \let\vec\relax
+ \usepackage{MnSymbol}  
+ \usepackage{adjustbox}
+ \usepackage{caption} 
+ \captionsetup[table]{skip=10pt}
+ 
+ % Quarto auto-defines theorem, lemma, corollary, proposition, definition,
+ % example, and remark.  We only add the non-default environments used.
+ \newtheorem{assumption}{Assumption}[section]
+
+ \DeclareMathOperator*{\argmin}{arg\,min}
+ \DeclareMathOperator*{\argmax}{arg\,max}
+ 
+ \allowdisplaybreaks
+
+\renewcommand{\d}{\mbox{d}}
+\newcommand{\IR}{\mathbb{R}}
+\newcommand{\IN}{\mathbb{N}}
+\newcommand{\vdagger}{\varphi_{\dagger}}
+\newcommand{\sdagger}{\sigma_{\dagger}}
+\newcommand{\tdagger}{\tau_{\dagger}}
+\newcommand{\gdagger}{g_{\dagger}}
+\newcommand{\adagger}{a_{\dagger}}
+\newcommand{\bdagger}{b_{\dagger}}
+\newcommand{\un}{\hbox{\it 1\hskip-3pt I}}
+\newcommand{\dps}{\displaystyle}
+\newcommand{\harvardand}{and}
+\def\ds{\displaystyle}
+
+      \newtheorem{theo}{Assumption}\newcounter{tmp}
+      \addtocounter{tmp}{1}
+      \renewcommand{\thetheo}{B.\arabic{tmp}}
+
+      \newtheorem{lem}{Lemma}\renewcommand{\thelem}{B.\arabic{tmp}}
+      
+       \newtheorem{defin}{Definition}\newcounter{tmp2}
+      \addtocounter{tmp2}{1}
+      \renewcommand{\thedefin}{A.\arabic{tmp2}}
+ 
+        \newtheorem{prop}{Proposition}\renewcommand{\theprop}{A.\arabic{tmp2}}
+         \newtheorem{assum}{Assumption}\renewcommand{\theassum}{A.\arabic{tmp2}}
+         
+         
+         \newcounter{tmp3}
+      \addtocounter{tmp3}{1}
+         \newtheorem{lemC}{Lemma}\newtheorem{thmC}{Theorem}\renewcommand{\thelemC}{C.\arabic{tmp3}}
+      \renewcommand{\thethmC}{C.\arabic{tmp3}}
+  
+
+\renewcommand{\qedsymbol}{$\blacksquare$}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Ls}{\mathbb{L}}

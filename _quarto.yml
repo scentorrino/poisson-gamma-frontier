@@ -1,0 +1,53 @@
+project:
+  type: manuscript
+
+manuscript:
+  article: index.qmd
+
+title: "Count Data Stochastic Frontier Models with Gamma Inefficiency"
+author:
+  - name: Samuele Centorrino
+    affil-id: 1, 2
+    email: scentorrino@proton.me
+  - name: Maria Perez Urdiales
+    affil-id: 3
+    email: mariaurdl@iadb.org
+affiliations:
+  - id: 1
+    name: Bates White LLC
+  - id: 2
+    name: Toulouse School of Economics
+  - id: 3
+    name: InterAmerican Development Bank
+date: today
+
+format:
+  pdf:
+    keep-tex: true
+    number-sections: true
+    template-partials:
+      - title.tex
+    include-in-header:
+      - preamble.tex
+    cite-method: natbib
+    biblio-style: agsm
+    fontsize: 11pt
+    linestretch: 1.5
+
+filters:
+  - remark.lua
+
+number-sections: true
+bibliography: references.bib
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: true        # cache all chunks — critical for slow Monte Carlo
+knitr:
+  opts_chunk:
+    comment: ""
+    fig.align: "center"
+    fig.width: 4
+    fig.height: 3
+    out.width: "75%"

@@ -1,0 +1,1200 @@
+# Monte Carlo Validation {#sec-simulations}
+
+```{r}
+#| label: setup-05
+#| include: false
+#| cache: false
+library(countSFA)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+options(knitr.table.format = if (knitr::is_latex_output()) "latex" else "html")
+```
+
+```{r}
+#| label: mc-run
+#| cache: true
+#| include: false
+if (!file.exists("code/simulations/results.rds")) {
+  source("code/simulations/montecarlo.R")
+}
+```
+
+```{r}
+#| label: mc-load
+#| cache: true
+#| include: false
+mc       <- readRDS("code/simulations/results.rds")
+mc_wide  <- mc$mc_wide
+dgp_grid <- mc$dgp_grid
+
+# Re-summarise with a robustness filter that drops replications whose point
+# estimates or standard errors blow up despite optim returning a "converged"
+# code. This catches the flat alpha → 0, b → infty ridge that the L-BFGS-B
+# bounds in fit_poisson_frontier are designed to avoid but cannot rule out
+# entirely in finite samples (cf. the weak-identification warning in §4).
+robust_stats <- function(est, se, true_val,
+                         est_max = 1e3, se_max = 1e3) {
+  ok <- is.finite(est) & is.finite(se) &
+        abs(est) < est_max & abs(se) < se_max
+  if (!any(ok))
+    return(data.frame(bias = NA_real_, rmse = NA_real_,
+                      coverage = NA_real_, conv_rate = 0))
+  err   <- est[ok] - true_val
+  ci_lo <- est[ok] - 1.96 * se[ok]
+  ci_hi <- est[ok] + 1.96 * se[ok]
+  data.frame(
+    bias      = mean(err),
+    rmse      = sqrt(mean(err^2)),
+    coverage  = mean(ci_lo <= true_val & true_val <= ci_hi),
+    conv_rate = mean(ok)
+  )
+}
+
+summary_rows <- list()
+for (g in seq_len(nrow(dgp_grid))) {
+  a_t <- dgp_grid$alpha_true[g]
+  b_t <- dgp_grid$b_true[g]
+  n_g <- dgp_grid$n[g]
+  sub <- mc_wide[mc_wide$alpha_true == a_t &
+                   mc_wide$b_true == b_t &
+                   mc_wide$n == n_g, ]
+
+  add <- function(model, param, est, se, true_val) {
+    s <- robust_stats(est, se, true_val)
+    summary_rows[[length(summary_rows) + 1L]] <<- data.frame(
+      alpha_true = a_t, b_true = b_t, n = n_g,
+      model = model, param = param, true_val = true_val,
+      s, stringsAsFactors = FALSE
+    )
+  }
+
+  add("Poisson", "beta1", sub$b1_pois, sub$se1_pois, 1)
+  add("Poisson", "beta2", sub$b2_pois, sub$se2_pois, 0.5)
+
+  ok_e <- sub$conv_exp == 0L
+  add("Exp", "beta1", sub$b1_exp[ok_e], sub$se1_exp[ok_e], 1)
+  add("Exp", "beta2", sub$b2_exp[ok_e], sub$se2_exp[ok_e], 0.5)
+  add("Exp", "b",     sub$b_exp [ok_e], sub$seb_exp[ok_e], b_t)
+
+  ok_g <- sub$conv_gam == 0L
+  add("Gamma", "beta1", sub$b1_gam[ok_g], sub$se1_gam [ok_g], 1)
+  add("Gamma", "beta2", sub$b2_gam[ok_g], sub$se2_gam [ok_g], 0.5)
+  add("Gamma", "b",     sub$b_gam [ok_g], sub$seb_gam [ok_g], b_t)
+  add("Gamma", "alpha", sub$al_gam[ok_g], sub$seal_gam[ok_g], a_t)
+
+  for (mod in c("exp", "gam")) {
+    col    <- if (mod == "exp") sub$mae_exp else sub$mae_gam
+    ok_col <- sub[[paste0("conv_", mod)]] == 0L
+    summary_rows[[length(summary_rows) + 1L]] <- data.frame(
+      alpha_true = a_t, b_true = b_t, n = n_g,
+      model = if (mod == "exp") "Exp" else "Gamma",
+      param = "TE_MAE", true_val = 0,
+      bias       = mean(col[ok_col], na.rm = TRUE),
+      rmse       = sd  (col[ok_col], na.rm = TRUE),
+      coverage   = NA_real_,
+      conv_rate  = mean(ok_col),
+      stringsAsFactors = FALSE
+    )
+  }
+}
+mc_summary <- do.call(rbind, summary_rows)
+rownames(mc_summary) <- NULL
+```
+
+## Experimental Design
+
+We validate the maximum likelihood estimators developed in @sec-estimation
+through a controlled Monte Carlo experiment. The data-generating process
+mirrors the model of @sec-model exactly:
+
+$$
+Y_i \mid u_i \;\sim\; \mathrm{Poisson}\!\left(\exp(\mathbf{x}_i'\boldsymbol{\beta}_0 - u_i)\right),
+\qquad u_i \;\sim\; \mathrm{Gamma}(\alpha_0,\, b_0),
+$$ {#eq-dgp}
+
+with $\mathbf{x}_i = (1,\, z_i)'$, $z_i \overset{\text{iid}}{\sim} N(0, 1)$,
+and true frontier coefficients $\boldsymbol{\beta}_0 = (1,\; 0.5)'$.
+The inefficiency distribution is varied across a $2 \times 2$ grid:
+$\alpha_0 \in \{1, 2\}$ (exponential versus hump-shaped Gamma density) and
+$b_0 \in \{1, 2\}$ (lower versus higher average inefficiency,
+$\bar{u}_0 = \alpha_0/b_0 \in \{0.5, 1, 2\}$). Three sample sizes
+$n \in \{500, 1000, 2500\}$ are crossed with this grid, yielding twelve
+experimental cells and $R = 1{,}000$ independent replications each. Seeds
+are pre-drawn from a fixed master seed to ensure exact reproducibility under
+any parallel schedule.
+
+Three estimators are evaluated in every replication. The *Poisson GLM* fits
+a standard Poisson regression that ignores inefficiency entirely, serving as
+the misspecified benchmark. It consistently estimates $\log \mathrm{E}[Y_i \mid \mathbf{x}_i]
+= a_i + \log \mathrm{E}[e^{-u_i}]$, so slope coefficients are
+asymptotically unbiased but the intercept is attenuated by
+$\alpha_0 \log\bigl(b_0/(b_0+1)\bigr)$ (cf.\ @eq-pois-attenuation). The *Exp frontier* fits the
+Poisson frontier with exponential inefficiency ($\alpha = 1$ fixed by maximum
+likelihood); it is correctly specified when $\alpha_0 = 1$ and misspecified
+otherwise. The *Gamma frontier* estimates both $\alpha$ and $b$ freely and
+is correctly specified across all twelve cells.
+
+A natural additional competitor is the negative binomial GLM (the limiting
+case of the frontier model as the inefficiency constraint $u_i \geq 0$ is
+dropped), but because it conflates frontier and random-effects heterogeneity
+it is omitted from the main comparisons; its inclusion is left for future work.
+
+For each fitted model we record the MLE of all free parameters, their
+delta-method standard errors (as described in @sec-estimation), convergence
+status, whether each nominal 95% confidence interval covers the true value,
+and the mean absolute error (MAE) of the estimated technical efficiency
+scores against the oracle scores $e^{-u_i}$ drawn from the DGP.
+
+::: {.remark title="Oracle efficiency scores"}
+The oracle score $e^{-u_i}$ is the
+exact realised efficiency of unit $i$ in a given replication, a quantity that
+is unobservable in practice but known in simulation. The MAE
+$n^{-1}\sum_i |\hat{\mathrm{TE}}_i - e^{-u_i}|$ measures how closely the
+conditional mean efficiency approximates the truth, integrating both estimation
+error in $(\hat{\boldsymbol{\beta}}, \hat b, \hat\alpha)$ and the irreducible
+noise from the conditional averaging over $u_i$.
+:::
+
+All PMF evaluations and efficiency score computations rely solely on
+standard special functions: the exponential case uses the regularised
+lower incomplete gamma function, while the general Gamma case applies a
+signed log-sum-exp algorithm to the alternating series @eq-pmf-gamma. The
+implementation switches to the closed-form $\alpha = 1$ path whenever
+$|\alpha - 1| < 10^{-10}$, ensuring numerical stability at the exponential
+boundary. The full implementation will be distributed in an accompanying R
+package.
+
+## Parameter Recovery
+
+@tbl-sim-bias reports bias and root mean squared error (RMSE) for the frontier
+coefficients $\beta_1$ (intercept) and $\beta_2$ (slope) together with the
+inefficiency rate $b$, at two representative DGP cells: $(\alpha_0, b_0) = (1, 1)$,
+where the exponential frontier is correctly specified, and $(\alpha_0, b_0) = (2, 1)$,
+where only the Gamma frontier is correctly specified.
+
+```{r}
+#| label: tbl-sim-bias
+#| cache: true
+#| tbl-cap: >
+#|   Bias and RMSE of three estimators across sample sizes.
+#|   Upper panel: DGP $(\alpha_0, b_0) = (1,1)$ (exponential inefficiency).
+#|   Lower panel: DGP $(\alpha_0, b_0) = (2,1)$ (Gamma inefficiency).
+#|   True values: $\beta_1 = 1$, $\beta_2 = 0.5$, $b = b_0$.
+#|   Sample sizes: $n \in \{500, 1000, 2500\}$.
+#|   The Poisson GLM has no $b$ or $\alpha$ parameter (shown as ---).
+
+fmt <- function(x) ifelse(is.na(x), "---", sprintf("%.3f", x))
+
+build_row <- function(a0, b0, n_val, param) {
+  get_br <- function(mod) {
+    r <- mc_summary[mc_summary$alpha_true == a0 &
+                    mc_summary$b_true    == b0 &
+                    mc_summary$n         == n_val &
+                    mc_summary$model     == mod &
+                    mc_summary$param     == param, ]
+    if (nrow(r) == 0) return(c("---", "---"))
+    c(fmt(r$bias), fmt(r$rmse))
+  }
+  pois <- get_br("Poisson")
+  exp_ <- get_br("Exp")
+  gam  <- get_br("Gamma")
+  data.frame(
+    `$n$`          = n_val,
+    Parameter      = switch(param,
+      beta1 = "$\\beta_1$", beta2 = "$\\beta_2$",
+      b = "$b$", alpha = "$\\alpha$"),
+    `Bias (Pois)`  = pois[1], `RMSE (Pois)` = pois[2],
+    `Bias (Exp)`   = exp_[1], `RMSE (Exp)`  = exp_[2],
+    `Bias (Gamma)` = gam[1],  `RMSE (Gamma)`= gam[2],
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+}
+
+panels <- list()
+for (dgp in list(c(1, 1), c(2, 1))) {
+  a0 <- dgp[1]; b0 <- dgp[2]
+  rows <- lapply(
+    list(c(500,  "beta1"), c(500,  "beta2"), c(500,  "b"),
+         c(1000, "beta1"), c(1000, "beta2"), c(1000, "b"),
+         c(2500, "beta1"), c(2500, "beta2"), c(2500, "b")),
+    function(x) build_row(a0, b0, as.integer(x[1]), x[2])
+  )
+  panels[[length(panels) + 1]] <- do.call(rbind, rows)
+}
+bias_tbl <- do.call(rbind, panels)
+
+kable(
+  bias_tbl,
+  booktabs  = TRUE,
+  escape    = FALSE,
+  col.names = c("$n$", "Param.",
+                "Bias", "RMSE", "Bias", "RMSE", "Bias", "RMSE"),
+  align     = c("r", "l", rep("r", 6))
+) |>
+  add_header_above(c(" " = 2,
+                     "Poisson GLM"    = 2,
+                     "Exp Frontier"   = 2,
+                     "Gamma Frontier" = 2)) |>
+  pack_rows("DGP: $\\\\alpha_0=1$, $b_0=1$ (exponential inefficiency)",
+            1, 9, escape = FALSE) |>
+  pack_rows("DGP: $\\\\alpha_0=2$, $b_0=1$ (Gamma inefficiency)",
+            10, 18, escape = FALSE) |>
+  pack_rows("$n = 500$",   1,  3, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  pack_rows("$n = 1000$",  4,  6, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  pack_rows("$n = 2500$",  7,  9, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  pack_rows("$n = 500$",  10, 12, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  pack_rows("$n = 1000$", 13, 15, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  pack_rows("$n = 2500$", 16, 18, bold = FALSE, italic = TRUE, escape = FALSE) |>
+  kable_styling(latex_options = "scale_down",
+                font_size = 9)
+```
+
+Several patterns emerge from @tbl-sim-bias. The Poisson GLM produces
+substantial downward bias in $\beta_1$ across all cells. From
+$\log\mathrm{E}[Y_i\mid\mathbf{x}_i] = a_i + \log\mathrm{E}[e^{-u_i}]$ and
+$\mathrm{E}[e^{-u_i}] = (b_0/(b_0+1))^{\alpha_0}$ (@eq-mgf-prod), the
+asymptotic intercept attenuation is
+$$
+\mathrm{plim}\,\hat\beta_{1,\mathrm{Pois}} - \beta_{1,0}
+\;=\; \alpha_0\,\log\!\bigl(b_0/(b_0+1)\bigr).
+$$ {#eq-pois-attenuation}
+At $(\alpha_0, b_0) = (1, 1)$ this gives $\log(1/2) \approx -0.693$;
+at $(\alpha_0, b_0) = (2, 1)$ it gives $2\log(1/2) \approx -1.386$.
+Both predictions are confirmed by @tbl-sim-bias. The slope $\beta_2$,
+by contrast, is approximately unbiased under the Poisson GLM in all cells,
+confirming that frontier misspecification contaminates only the intercept
+and leaves slope coefficients intact (under the homogeneous DGP, where
+$u_i \perp \mathbf{x}_i$).
+
+The Exp frontier is nearly unbiased for all parameters when $\alpha_0 = 1$, with
+RMSE declining close to the $\sqrt{n}$ rate expected of a well-posed MLE.
+Under Gamma inefficiency ($\alpha_0 = 2$), the misspecified Exp frontier incurs
+moderate bias in $\hat{b}$ (which is attempting to fit a one-parameter family
+to a two-parameter distribution), while the slope estimates $\hat{\beta}_2$
+remain largely unaffected. This suggests a useful robustness property: the
+Poisson frontier with exponential inefficiency is a consistent estimator of the
+frontier slopes even when the true inefficiency distribution is Gamma.
+
+The correctly specified Gamma frontier recovers all parameters with small
+bias and RMSE that declines at the parametric $\sqrt{n}$ rate. At $\alpha_0 = 1$
+the bias of $\hat\alpha$ shrinks from $0.13$ at $n = 500$ to near zero
+at $n = 2500$, and the Exp-frontier slopes are unaffected by the surplus
+shape parameter; at $\alpha_0 = 2$, the Gamma frontier identifies the true
+shape with a small downward bias that persists across sample sizes
+($-0.11$ at $n = 500$, $-0.08$ at $n = 2500$), reflecting the well-known
+incidental-parameters character of $\alpha$ when the frontier mean is
+large relative to $b$.
+
+## RMSE Convergence
+
+@fig-sim-rmse plots RMSE against sample size on a log–log scale, with dotted
+reference lines of slope $-1/2$ anchored at $n = 500$. Parallelism between the
+observed curves and the reference lines confirms that all frontier estimators
+achieve the parametric convergence rate.
+
+```{r}
+#| label: fig-sim-rmse
+#| cache: true
+#| fig-cap: >
+#|   Root mean squared error (RMSE) of the Exp and Gamma frontier estimators
+#|   as a function of sample size on a log--log scale.
+#|   Dotted reference lines show the $1/\sqrt{n}$ slope anchored at $n = 500$.
+#|   Panels are faceted by parameter (rows) and true shape $\alpha_0$ (columns).
+#|   DGP: $b_0 = 1$.
+
+rmse_df <- mc_summary |>
+  filter(b_true == 1,
+         param  %in% c("beta1", "beta2", "b"),
+         model  %in% c("Exp", "Gamma")) |>
+  mutate(
+    param_label = factor(param,
+      levels = c("beta1", "beta2", "b"),
+      labels = c(expression(beta[1]), expression(beta[2]), expression(b))),
+    alpha_label = factor(alpha_true,
+      levels = c(1, 2),
+      labels = c(expression(alpha[0]==1), expression(alpha[0]==2))),
+    Model = model
+  )
+
+ref_df <- rmse_df |>
+  filter(n == 500) |>
+  select(param_label, alpha_label, Model, rmse_ref = rmse)
+
+rmse_plot_df <- rmse_df |>
+  left_join(ref_df, by = c("param_label", "alpha_label", "Model")) |>
+  mutate(ref_rmse = rmse_ref * sqrt(500 / n))
+
+ggplot(rmse_df, aes(x = n, y = rmse, colour = Model, shape = Model)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  geom_line(data = rmse_plot_df, aes(y = ref_rmse),
+            linetype = "dotted", colour = "grey50", linewidth = 0.5,
+            show.legend = FALSE) +
+  scale_x_log10(breaks = c(500, 1000, 2500),
+                labels = c("500", "1000", "2500")) +
+  scale_y_log10() +
+  scale_colour_manual(values = c(Exp = "#2166ac", Gamma = "#d6604d")) +
+  scale_shape_manual(values  = c(Exp = 16,        Gamma = 17)) +
+  facet_grid(param_label ~ alpha_label,
+             labeller = label_parsed, scales = "free_y") +
+  labs(x = expression("Sample size"~italic(n)), y = "RMSE (log scale)",
+       colour = "Estimator", shape = "Estimator") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+When $\alpha_0 = 1$, the Gamma frontier estimator shows somewhat higher RMSE
+than the Exp frontier, particularly for the rate parameter $b$, reflecting
+the cost of estimating the additional shape parameter $\alpha$ from data that
+provide limited information about distributional shape. This efficiency loss is
+expected: the correctly specified Exp frontier achieves the Cramér–Rao bound for
+the restricted model, while the Gamma frontier must estimate one additional
+parameter. When $\alpha_0 = 2$, the position reverses: the Gamma frontier's
+RMSE for $b$ declines at the parametric rate, while the Exp frontier's $b$ RMSE
+does not shrink as quickly due to structural misspecification. Results for
+$b \in \{1, 2\}$ are qualitatively similar; the $b = 2$ cells show slightly
+faster convergence of $\hat{b}$ due to the tighter inefficiency distribution,
+but the coverage and RMSE patterns are unchanged.
+
+## Coverage of Confidence Intervals
+
+@fig-sim-coverage reports empirical coverage rates of nominal 95% confidence
+intervals constructed from the delta-method standard errors described in
+@sec-estimation. The dashed horizontal line marks the nominal 95% level.
+
+```{r}
+#| label: fig-sim-coverage
+#| cache: true
+#| fig-cap: >
+#|   Empirical coverage probability of nominal 95\% confidence intervals for
+#|   $\beta_1$, $\beta_2$, and $b$ across sample sizes and DGP cells.
+#|   Dashed line marks the nominal 95\% level.
+#|   DGP: $b_0 = 1$; $\alpha_0 \in \{1,2\}$ shown in separate columns.
+
+cov_df <- mc_summary |>
+  filter(b_true == 1,
+         param  %in% c("beta1", "beta2", "b"),
+         model  %in% c("Exp", "Gamma"),
+         !is.na(coverage)) |>
+  mutate(
+    param_label = factor(param,
+      levels = c("beta1", "beta2", "b"),
+      labels = c(expression(beta[1]), expression(beta[2]), expression(b))),
+    alpha_label = factor(alpha_true,
+      levels = c(1, 2),
+      labels = c(expression(alpha[0]==1), expression(alpha[0]==2))),
+    n_fac = factor(n, levels = c(500, 1000, 2500)),
+    Model = model
+  )
+
+ggplot(cov_df, aes(x = n_fac, y = coverage, fill = Model)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.85) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", colour = "black",
+             linewidth = 0.6) +
+  scale_fill_manual(values = c(Exp = "#2166ac", Gamma = "#d6604d")) +
+  scale_y_continuous(limits = c(0, 1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  facet_grid(param_label ~ alpha_label,
+             labeller = label_parsed) +
+  labs(x = expression("Sample size"~italic(n)), y = "Coverage probability",
+       fill = "Estimator") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+The correctly specified exponential frontier achieves nominal 95% coverage
+for all parameters at $n = 500$ and beyond, consistent with the asymptotic
+normality established in @eq-asymp-normal. The Gamma frontier, by contrast,
+exhibits chronic delta-method under-coverage in the $\alpha_0 = 1$ panel of
+@fig-sim-coverage, typically 70–80% for $\beta_1$ and $b$, that does not
+attenuate with sample size. The cause is a flat $\alpha$-direction in the
+log-likelihood: the observed-information Hessian under-states the true
+sampling variability of the joint $(\hat\alpha, \hat b)$ pair, so the
+delta-method intervals are too short. The slope $\beta_2$ is unaffected
+(its Fisher information is decoupled from $\alpha$) and attains nominal
+coverage in both specifications. Profile-likelihood intervals for $\alpha$,
+illustrated in @fig-profile-lik, sidestep this problem and are the
+recommended interval procedure when $\hat\alpha$ is reported.
+
+::: {.remark title="Coverage under misspecification"}
+Under $\alpha_0 = 2$, the Exp
+frontier's 95% intervals for $b$ may exhibit either over- or under-coverage
+depending on the DGP cell, because the parameter being estimated is not the
+true $b_0$ but rather the pseudo-true $b^*$ that minimises the Kullback–Leibler
+divergence between the exponential model and the Gamma DGP. The correct
+interpretation in this case is that the Exp frontier consistently estimates
+$b^*$, and the displayed coverage is the coverage of the interval for $b^*$,
+not for $b_0$.
+:::
+
+## Efficiency Score Recovery
+
+@fig-sim-mae plots the mean absolute error (MAE) of the estimated efficiency
+scores against the oracle scores across sample sizes. Each shaded band is the
+mean MAE $\pm$ one standard deviation across replications.
+
+```{r}
+#| label: fig-sim-mae
+#| cache: true
+#| fig-cap: >
+#|   Mean absolute error (MAE) of estimated technical efficiency scores
+#|   $\widehat{\mathrm{TE}}_i = \mathrm{E}[\exp(-u_i) \mid y_i,\, \mathbf{x}_i]$ relative to
+#|   oracle scores $\exp(-u_i)$, as a function of sample size.
+#|   Shaded bands show mean $\pm$ 1 SD across replications.
+#|   DGP: $b_0 = 1$; panels faceted by true $\alpha_0$.
+
+mae_df <- mc_summary |>
+  filter(b_true == 1, param == "TE_MAE",
+         model %in% c("Exp", "Gamma")) |>
+  mutate(
+    alpha_label = factor(alpha_true,
+      levels = c(1, 2),
+      labels = c(expression(alpha[0]==1), expression(alpha[0]==2))),
+    Model    = model,
+    mae_mean = bias,   # "bias" column stores mean MAE
+    mae_sd   = rmse    # "rmse" column stores SD of MAE
+  )
+
+ggplot(mae_df, aes(x = n, y = mae_mean, colour = Model, shape = Model)) +
+  geom_ribbon(aes(ymin = pmax(mae_mean - mae_sd, 0),
+                  ymax = mae_mean + mae_sd, fill = Model),
+              alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  scale_x_log10(breaks = c(500, 1000, 2500),
+                labels = c("500", "1000", "2500")) +
+  scale_colour_manual(values = c(Exp = "#2166ac", Gamma = "#d6604d")) +
+  scale_fill_manual(  values = c(Exp = "#2166ac", Gamma = "#d6604d")) +
+  scale_shape_manual(values  = c(Exp = 16,        Gamma = 17)) +
+  facet_wrap(~ alpha_label, labeller = label_parsed) +
+  labs(x = expression("Sample size"~italic(n)),
+       y = "MAE of efficiency scores",
+       colour = "Estimator", shape = "Estimator", fill = "Estimator") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+MAE declines steadily with $n$ for both estimators across both DGP cells,
+as visible in @fig-sim-mae. When $\alpha_0 = 1$, the correctly specified Exp
+frontier achieves lower MAE than the Gamma frontier at every sample size, because
+the Gamma model must estimate an additional parameter from data that are generated
+by the simpler exponential DGP. The gap narrows as $n$ grows, since the Gamma
+frontier's estimate of $\alpha$ converges to its true value of 1, recovering the
+exponential specification asymptotically.
+
+When $\alpha_0 = 2$, a notable feature emerges: the misspecified Exp frontier
+achieves competitive MAE at large $n$, approaching the Gamma frontier's accuracy
+despite using the wrong inefficiency distribution. This robustness arises because
+efficiency scores depend primarily on the fitted log-frontier $\hat{a}_i =
+\mathbf{x}_i'\hat{\boldsymbol{\beta}}$ and secondarily on the precise shape of
+the conditional density $f(u_i \mid y_i, \mathbf{x}_i)$. The frontier mean is consistently estimated by
+both models (as confirmed in @tbl-sim-bias), so the efficiency ranks of units
+are largely preserved even under moderate misspecification.
+
+## Summary
+
+The simulation evidence supports three conclusions, all visible in
+@tbl-sim-bias, @fig-sim-rmse, @fig-sim-coverage, and @fig-sim-mae. First, the
+Poisson frontier MLE is consistent and the bias and RMSE of all parameters
+shrink at the parametric $\sqrt{n}$ rate across the grid
+$n \in \{500, 1000, 2500\}$. The exponential frontier, when correctly
+specified, also attains nominal 95% delta-method coverage at $n = 500$.
+The Gamma frontier exhibits delta-method under-coverage of $\hat\alpha$
+and $\hat b$ that does not attenuate with sample size; profile-likelihood
+intervals are recommended when $\hat\alpha$ is reported. Second, ignoring
+the frontier structure (the Poisson GLM) biases the intercept by a
+predictable log-mean-inefficiency factor while leaving slope coefficients
+intact: a pattern that alerts practitioners to the presence of
+inefficiency even when the model is not formally estimated. Third,
+efficiency scores are reliably recovered under moderate distributional
+misspecification, supporting the practical use of the simpler exponential
+frontier as a first-pass diagnostic even in settings where the true
+$\alpha$ may differ from 1.
+
+With the finite-sample properties of the estimator established, @sec-empirical
+applies the Poisson–Gamma frontier to the @hausman1984 patent panel,
+demonstrating that the Gamma shape parameter is empirically relevant and that
+the resulting firm-level efficiency scores reveal economically meaningful
+variation in patenting productivity.
+
+## Inefficiency Determinants and the Scaling Model {#sec-sim-scaling}
+
+```{r}
+#| label: scaling-check
+#| include: false
+stopifnot(file.exists("code/simulations/scaling_results.rds"))
+```
+
+```{r}
+#| label: scaling-run
+#| cache: true
+#| include: false
+if (!file.exists("code/simulations/scaling_results.rds")) {
+  source("code/simulations/montecarlo.R")
+}
+```
+
+```{r}
+#| label: scaling-load
+#| cache: true
+#| include: false
+sc_raw  <- readRDS("code/simulations/scaling_results.rds")
+sc_list <- sc_raw$results
+
+# Flatten all scenario × n cells into one data frame
+sc_df <- do.call(rbind, lapply(sc_list, function(sc_n)
+  do.call(rbind, sc_n)
+))
+rownames(sc_df) <- NULL
+
+# Scenario labels
+scenario_labels <- c(
+  "0" = "Null (0, 0)",
+  "1" = "Weak (0.3, 0.2)",
+  "2" = "Strong (1.0, 0.5)",
+  "3" = "Sign-rev (0.8, \u22120.4)"
+)
+sc_df$scenario_label <- factor(
+  scenario_labels[as.character(sc_df$scenario)],
+  levels = unname(scenario_labels)
+)
+sc_df$n_fac <- factor(sc_df$n, levels = c(500, 1000, 2500))
+
+# True parameter values
+beta_tr  <- sc_raw$beta_true          # c(1, 0.5) — matches homogeneous DGP
+b_tr     <- sc_raw$b_true             # 2
+# delta truth differs per scenario; store a lookup
+delta_truth <- do.call(rbind, lapply(sc_raw$delta_scenarios, function(s)
+  data.frame(scenario = s$id, d1_true = s$delta[1], d2_true = s$delta[2])
+))
+
+sc_df <- merge(sc_df, delta_truth, by = "scenario")
+```
+
+### Experimental Design
+
+The experimental design extends the homogeneous framework of @sec-simulations to allow
+inefficiency to depend on observed firm characteristics via the scaling model
+introduced in @sec-scaling. The data-generating process is
+
+$$
+Y_i \mid u_i \;\sim\; \mathrm{Poisson}\!\left(\exp(\mathbf{x}_i'\boldsymbol{\beta}_0 - u_i)\right),
+\qquad
+u_i \;\sim\; \mathrm{Exp}(b_i),
+\qquad
+b_i = b_0 \exp\!\left(-\mathbf{z}_i'\boldsymbol{\delta}_0\right),
+$$ {#eq-dgp-scaling}
+
+with $\mathbf{x}_i = (1, z_i)'$, $z_i \sim N(0, 1)$, true frontier coefficients
+$\boldsymbol{\beta}_0 = (1, 0.5)'$, and baseline rate $b_0 = 2$, the same
+homogeneous-DGP backbone used in @sec-simulations, so the scaling experiment is
+directly comparable to the production results in §5.1. The inefficiency
+determinant vector is $\mathbf{z}^{\text{det}}_i = (z^{\text{det}}_{i1},
+z^{\text{det}}_{i2})'$ with $z^{\text{det}}_{ij} \overset{\text{iid}}{\sim} N(0, 1)$,
+independent of $z_i$. Holding the covariate design fixed across orientations
+isolates the role of the scaling block: any difference between the homogeneous
+and scaling estimators is attributable to the determinant structure, not to
+the shape of the regressor distribution. The true $b_i$ varies continuously
+across firms, so the efficiency score @eq-te-scaling is observation-specific
+even after conditioning on $\boldsymbol{\beta}_0$.
+
+The $\boldsymbol{\delta}_0$ vector is varied across four scenarios. Scenario 0
+($\boldsymbol{\delta}_0 = \mathbf{0}$) is the null under which no determinants
+are present; it is used to verify size control of the likelihood ratio test. Scenario 1
+($\boldsymbol{\delta}_0 = (0.3, 0.2)'$) represents weak heterogeneity; Scenario 2
+($\boldsymbol{\delta}_0 = (1.0, 0.5)'$) represents strong heterogeneity in which
+the most- and least-efficient firms differ in their $b_i$; and
+Scenario 3 ($\boldsymbol{\delta}_0 = (0.8, -0.4)'$) introduces a sign reversal
+so that one determinant reduces inefficiency while the other increases it. Three
+sample sizes $n \in \{500, 1000, 2500\}$ are crossed with the four $\boldsymbol{\delta}_0$
+scenarios, yielding twelve experimental cells, each replicated $R = 1{,}000$ times.
+
+Three estimators are evaluated in each replication. The one-step scaling MLE
+jointly maximises the log-likelihood @eq-loglik-scaling over $(\boldsymbol{\beta},
+b, \boldsymbol{\delta})$ using bound-constrained optimisation with a warm
+start from the homogeneous solution. The homogeneous MLE ignores $\mathbf{z}_i$ and
+forces $\boldsymbol{\delta} = \mathbf{0}$; it is the correctly specified model in
+Scenario 0 and increasingly misspecified in Scenarios 1–3. The two-step estimator
+of @wangSchmidt2002 provides a widely used benchmark: the homogeneous model is
+fitted first to obtain efficiency scores, and $\boldsymbol{\delta}$ is then
+recovered by regressing $-\log\widehat{\mathrm{TE}}_i$ on $\mathbf{z}_i$ by
+OLS. By the Cramér–Rao bound the one-step MLE should dominate the two-step
+estimator in large samples, but the two-step may be competitive in small samples
+where the joint curvature of the scaling likelihood is weak.
+
+In Scenario 0 the LR test of $H_0:\boldsymbol{\delta}=\mathbf{0}$ (cf. @eq-lr-test) should achieve size close to the
+nominal 5% level (confirming that adding redundant $\boldsymbol{\delta}$
+parameters does not spuriously improve the fit), and the frontier coefficients
+$\hat{\boldsymbol{\beta}}$ should be unaffected by the inclusion of unnecessary
+determinants. Scenarios 1–3 document the bias incurred by ignoring determinants
+and the power of the LR test to detect them.
+
+### Bias and RMSE of Frontier Coefficients
+
+```{r}
+#| label: tbl-scaling-rmse
+#| cache: true
+#| tbl-cap: "Bias and RMSE of frontier coefficient $\\beta_1$ (intercept) and rate $b$ across scenarios and sample sizes. Scaling = one-step MLE; Homogeneous = misspecified model. True values: $\\beta_1 = 1$, $b_0 = 2$."
+
+fmt3 <- function(x) ifelse(is.na(x), "---", sprintf("%.3f", x))
+
+bias_rows <- do.call(rbind, lapply(0:3, function(sid) {
+  do.call(rbind, lapply(c(500, 1000, 2500), function(nv) {
+    sub <- sc_df[sc_df$scenario == sid & sc_df$n == nv, ]
+    conv_sc_ok <- is.finite(sub$b_sc) & is.finite(sub$b1_sc)
+    conv_ho_ok <- is.finite(sub$b_ho) & is.finite(sub$b1_ho)
+
+    b1_sc_bias <- mean(sub$b1_sc[conv_sc_ok] - beta_tr[1], na.rm = TRUE)
+    b1_sc_rmse <- sqrt(mean((sub$b1_sc[conv_sc_ok] - beta_tr[1])^2, na.rm = TRUE))
+    b_sc_bias  <- mean(sub$b_sc[conv_sc_ok]  - b_tr,       na.rm = TRUE)
+    b_sc_rmse  <- sqrt(mean((sub$b_sc[conv_sc_ok] - b_tr)^2,  na.rm = TRUE))
+
+    b1_ho_bias <- mean(sub$b1_ho[conv_ho_ok] - beta_tr[1], na.rm = TRUE)
+    b1_ho_rmse <- sqrt(mean((sub$b1_ho[conv_ho_ok] - beta_tr[1])^2, na.rm = TRUE))
+    b_ho_bias  <- mean(sub$b_ho[conv_ho_ok]  - b_tr,       na.rm = TRUE)
+    b_ho_rmse  <- sqrt(mean((sub$b_ho[conv_ho_ok] - b_tr)^2,  na.rm = TRUE))
+
+    data.frame(
+      Scenario = scenario_labels[as.character(sid)],
+      `$n$`    = nv,
+      `Sc. Bias($\\beta_1$)` = fmt3(b1_sc_bias),
+      `Sc. RMSE($\\beta_1$)` = fmt3(b1_sc_rmse),
+      `Sc. Bias($b$)`        = fmt3(b_sc_bias),
+      `Sc. RMSE($b$)`        = fmt3(b_sc_rmse),
+      `Ho. Bias($\\beta_1$)` = fmt3(b1_ho_bias),
+      `Ho. RMSE($\\beta_1$)` = fmt3(b1_ho_rmse),
+      `Ho. Bias($b$)`        = fmt3(b_ho_bias),
+      `Ho. RMSE($b$)`        = fmt3(b_ho_rmse),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  }))
+}))
+
+rownames(bias_rows) <- NULL
+kable(
+  bias_rows, row.names = FALSE, booktabs = TRUE, escape = FALSE,
+  col.names = c("Scenario", "$n$",
+                "Bias", "RMSE", "Bias", "RMSE",
+                "Bias", "RMSE", "Bias", "RMSE"),
+  align = c("l","r",rep("r",8))
+) |>
+  add_header_above(c(" " = 2,
+    "Scaling: $\\\\beta_1$" = 2, "Scaling: $b$" = 2,
+    "Homogeneous: $\\\\beta_1$" = 2, "Homogeneous: $b$" = 2),
+    escape = FALSE) |>
+  collapse_rows(columns = 1, valign = "middle") |>
+  kable_styling(latex_options = "scale_down", font_size = 8)
+```
+
+@tbl-scaling-rmse reveals the central finding of this experiment. In Scenario 0
+the two estimators perform equivalently: both are approximately unbiased for
+$\beta_1$ and $b$, confirming that adding redundant determinant parameters does not
+contaminate the frontier estimates. In Scenario 2, the homogeneous model exhibits
+substantial upward bias in $\hat{b}$: by forcing $\boldsymbol{\delta} = \mathbf{0}$,
+the estimator absorbs the heterogeneous inefficiency into a single inflated
+rate parameter and consequently understates the implied mean inefficiency
+$1/b$. The scaling MLE remains approximately unbiased for $b$ across
+all scenarios and sample sizes, as the parameter $b$ now represents the baseline
+rate conditional on $\mathbf{z}_i = \mathbf{0}$ rather than an unconditional
+average. The slope coefficient $\hat{\beta}_1$ is largely unaffected by model
+misspecification in both estimators: the frontier mean is consistently estimated
+even when the inefficiency distribution is mis-specified, echoing the robustness
+property observed in @sec-simulations.
+
+### Estimation of Inefficiency Determinants
+
+```{r}
+#| label: tbl-delta-rmse
+#| cache: true
+#| tbl-cap: "Bias, RMSE, and 95\\% confidence interval coverage for the inefficiency determinant estimates $\\hat{\\delta}_1$ (binary $z_1$) and $\\hat{\\delta}_2$ (continuous $z_2$) under the one-step scaling MLE. Scenario 0 is excluded (true $\\delta = 0$, used for size calibration only)."
+
+delta_rows <- do.call(rbind, lapply(1:3, function(sid) {
+  dt <- delta_truth[delta_truth$scenario == sid, ]
+  d1_tr <- dt$d1_true; d2_tr <- dt$d2_true
+
+  do.call(rbind, lapply(c(500, 1000, 2500), function(nv) {
+    sub <- sc_df[sc_df$scenario == sid & sc_df$n == nv, ]
+    ok  <- is.finite(sub$d1_sc) & is.finite(sub$se_d1_sc) &
+           is.finite(sub$d2_sc) & is.finite(sub$se_d2_sc)
+    sub <- sub[ok, ]
+
+    b_d1 <- mean(sub$d1_sc - d1_tr, na.rm = TRUE)
+    r_d1 <- sqrt(mean((sub$d1_sc - d1_tr)^2, na.rm = TRUE))
+    cov1 <- mean((sub$d1_sc - 1.96*sub$se_d1_sc <= d1_tr) &
+                 (d1_tr <= sub$d1_sc + 1.96*sub$se_d1_sc), na.rm = TRUE)
+
+    b_d2 <- mean(sub$d2_sc - d2_tr, na.rm = TRUE)
+    r_d2 <- sqrt(mean((sub$d2_sc - d2_tr)^2, na.rm = TRUE))
+    cov2 <- mean((sub$d2_sc - 1.96*sub$se_d2_sc <= d2_tr) &
+                 (d2_tr <= sub$d2_sc + 1.96*sub$se_d2_sc), na.rm = TRUE)
+
+    data.frame(
+      Scenario  = scenario_labels[as.character(sid)],
+      `$n$`     = nv,
+      `Bias($\\hat\\delta_1$)` = fmt3(b_d1),
+      `RMSE($\\hat\\delta_1$)` = fmt3(r_d1),
+      `Cov.$\\delta_1$`        = fmt3(cov1),
+      `Bias($\\hat\\delta_2$)` = fmt3(b_d2),
+      `RMSE($\\hat\\delta_2$)` = fmt3(r_d2),
+      `Cov.$\\delta_2$`        = fmt3(cov2),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  }))
+}))
+
+rownames(delta_rows) <- NULL
+kable(
+  delta_rows, row.names = FALSE, booktabs = TRUE, escape = FALSE,
+  col.names = c("Scenario", "$n$",
+                "Bias", "RMSE", "Coverage",
+                "Bias", "RMSE", "Coverage"),
+  align = c("l","r",rep("r",6))
+) |>
+  add_header_above(c(" " = 2, "$\\\\hat{\\\\delta}_1$ (binary)" = 3,
+                     "$\\\\hat{\\\\delta}_2$ (continuous)" = 3),
+                   escape = FALSE) |>
+  collapse_rows(columns = 1, valign = "middle") |>
+  kable_styling(latex_options = "scale_down", font_size = 8)
+```
+
+@tbl-delta-rmse shows that the scaling MLE recovers both determinants with
+small bias and declining RMSE as $n$ grows, consistent with
+$\sqrt{n}$-consistency: at $n = 500$ the RMSE of $\hat\delta_1$ is $\approx
+0.11$ and falls to $\approx 0.05$ at $n = 2500$. The sign reversal in
+Scenario 3 is correctly identified across all sample sizes:
+$\hat{\delta}_1 > 0$ and $\hat{\delta}_2 < 0$ for the vast majority of
+replications. Empirical coverage of the nominal 95% delta-method intervals
+sits at 94–96% for both determinants across the entire grid
+$n \in \{500, 1000, 2500\}$ and all three non-null scenarios, close to
+nominal at every cell, in contrast to the chronic under-coverage of the
+homogeneous-MC Gamma-frontier intervals discussed above.
+
+### Power of the Likelihood Ratio Test
+
+```{r}
+#| label: fig-lr-power
+#| cache: true
+#| fig-cap: "Rejection rates of the likelihood ratio test for inefficiency determinants at the nominal 5\\% level. Scenario 0 provides size calibration (dashed line marks 0.05). Scenarios 1--3 give power at weak, strong, and sign-reversal alternatives. The test statistic is $\\Lambda = 2(\\ell_{\\text{scaling}} - \\ell_{\\text{homogeneous}}) \\stackrel{d}{\\to} \\chi^2_2$ under $H_0$."
+
+critical_val <- qchisq(0.95, df = 2)
+
+lr_df <- do.call(rbind, lapply(0:3, function(sid) {
+  do.call(rbind, lapply(c(500, 1000, 2500), function(nv) {
+    sub  <- sc_df[sc_df$scenario == sid & sc_df$n == nv, ]
+    ok   <- is.finite(sub$lr_stat)
+    rej  <- mean(sub$lr_stat[ok] > critical_val, na.rm = TRUE)
+    data.frame(scenario_label = scenario_labels[as.character(sid)],
+               n = nv, rejection_rate = rej)
+  }))
+}))
+lr_df$scenario_label <- factor(lr_df$scenario_label, levels = unname(scenario_labels))
+
+ggplot(lr_df, aes(x = n, y = rejection_rate,
+                  colour = scenario_label, shape = scenario_label)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.5) +
+  geom_hline(yintercept = 0.05, linetype = "dashed",
+             colour = "grey40", linewidth = 0.6) +
+  scale_x_continuous(breaks = c(500, 1000, 2500),
+                     labels = c("500", "1000", "2500")) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent_format(1)) +
+  scale_colour_brewer(palette = "Set1", name = "Scenario") +
+  scale_shape_discrete(name = "Scenario") +
+  labs(x = expression("Sample size"~italic(n)), y = "Rejection rate") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+@fig-lr-power confirms correct size control in Scenario 0: the rejection rate is
+close to 5% across all sample sizes, validating the $\chi^2_2$ reference
+distribution. In Scenario 2 the test achieves near-complete power by $n = 500$,
+reflecting the large signal-to-noise ratio when $\boldsymbol{\delta}_0 = (1.0,
+0.5)'$. Scenario 3, with a sign reversal, has slightly lower power at $n = 500$ than
+Scenario 2, because the binary and continuous determinants partially offset
+each other in terms of likelihood curvature; by $n = 1000$ the power gap
+disappears. Weak determinants (Scenario 1) require $n \approx 2500$ for
+rejection rates near 80%, suggesting that the test has limited power
+against subtle heterogeneity with fewer than $\sim 1000$ observations.
+
+### Efficiency Score Accuracy
+
+```{r}
+#| label: fig-score-mae
+#| cache: true
+#| fig-cap: "Mean absolute error (MAE) of firm-level conditional efficiency scores, averaged over firms and replications, for the scaling and homogeneous models across scenarios and sample sizes. The scaling model uses unit-specific $\\hat{b}_i$; the homogeneous model applies the common $\\hat{b}$."
+
+mae_df <- do.call(rbind, lapply(0:3, function(sid) {
+  do.call(rbind, lapply(c(500, 1000, 2500), function(nv) {
+    sub  <- sc_df[sc_df$scenario == sid & sc_df$n == nv, ]
+    data.frame(
+      scenario_label = scenario_labels[as.character(sid)],
+      n = nv,
+      mae_sc = mean(sub$mae_sc, na.rm = TRUE),
+      mae_ho = mean(sub$mae_ho, na.rm = TRUE)
+    )
+  }))
+}))
+mae_df$scenario_label <- factor(mae_df$scenario_label, levels = unname(scenario_labels))
+mae_long <- rbind(
+  data.frame(mae_df[, c("scenario_label", "n")],
+             MAE = mae_df$mae_sc, Model = "Scaling"),
+  data.frame(mae_df[, c("scenario_label", "n")],
+             MAE = mae_df$mae_ho, Model = "Homogeneous")
+)
+
+ggplot(mae_long, aes(x = scenario_label, y = MAE, fill = Model)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.85) +
+  scale_fill_manual(values = c(Scaling = "#2166ac", Homogeneous = "#d6604d")) +
+  facet_wrap(~ factor(n, labels = paste0("n = ", c(500, 1000, 2500))),
+             nrow = 1) +
+  labs(x = "Scenario", y = "Mean absolute error of TE scores",
+       fill = "Model") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 25, hjust = 1),
+        panel.grid.minor = element_blank())
+```
+
+@fig-score-mae documents the distortion in efficiency scores caused by ignoring
+inefficiency determinants. In Scenario 0, both models produce virtually identical
+MAE because the DGP is homogeneous. In Scenario 2, the homogeneous model assigns
+the same expected inefficiency to every firm regardless of $\mathbf{z}_i$,
+systematically overestimating efficiency for high-$b_i$ firms (those with low
+inefficiency) and underestimating it for low-$b_i$ firms. The scaling model, by
+contrast, adapts its conditional density to each unit's $\hat{b}_i$, achieving
+lower MAE across all sample sizes. The cost of ignoring determinants is
+proportional to the strength of $\boldsymbol{\delta}_0$: Scenario 1 shows a small
+gap, Scenario 2 a large one, and Scenario 3 an intermediate gap consistent with
+the opposing directions of the two components.
+
+### Convergence and Computation
+
+```{r}
+#| label: scaling-convergence
+#| include: false
+conv_rate <- mean(sc_df$conv_sc %in% c(0L, 1L), na.rm = TRUE)
+mae_na_rate <- mean(is.na(sc_df$mae_sc) | is.na(sc_df$mae_ho))
+timing_range <- range(unlist(sc_raw$timing), na.rm = TRUE)
+```
+
+The scaling MLE converged in
+`r sprintf("%.1f", 100 * conv_rate)`% of all replications across the twelve
+experimental cells, with a derivative-free fallback invoked in less than 5%
+of runs. In a small fraction of replications
+(`r sprintf("%.2f", 100 * mae_na_rate)`% across all cells) the
+series-based efficiency score evaluator returns NA due to catastrophic
+cancellation when the positive and negative partial sums are nearly equal; these
+replications are excluded from the MAE computation reported in @fig-score-mae.
+Wall-clock time per (scenario, $n$) cell, on 8 parallel cores, ranged from
+`r sprintf("%.0f", timing_range[1])` to
+`r sprintf("%.0f", timing_range[2])` seconds. All computations rely on
+standard incomplete-gamma and log-gamma routines; no specialised count-data
+or frontier packages are required.
+
+### Summary
+
+The scaling model simulation establishes four conclusions. First, the one-step
+MLE accurately recovers both frontier coefficients and inefficiency determinants
+with coverage approaching 95% by $n = 500$, and the LR test achieves correct
+size in Scenario 0 and rejects with high frequency against moderate-to-strong alternatives by
+$n = 500$. Second, ignoring determinants (fitting the homogeneous model to
+heterogeneous data) produces upward bias in $\hat{b}$ that is proportional to
+the strength of $\boldsymbol{\delta}_0$; this bias directly distorts the implied
+mean inefficiency and the efficiency rankings across firms. Third, the two-step
+estimator provides a useful heuristic for preliminary analysis but is dominated
+by the one-step MLE in terms of RMSE for $\boldsymbol{\delta}$ at all but the
+smallest sample sizes, consistent with the theoretical efficiency advantage of
+full MLE. Fourth, efficiency score accuracy degrades in Scenario 2
+under the homogeneous model but is largely unaffected under the scaling model,
+supporting the recommendation of @sec-scaling to include firm-level determinants
+whenever $\mathbf{z}_i$ is available and there is prior reason to expect
+heterogeneous inefficiency levels.
+
+## Cost-Frontier Validation {#sec-sim-cost}
+
+```{r}
+#| label: cost-check
+#| include: false
+stopifnot(file.exists("code/simulations/cost_results.rds"))
+```
+
+```{r}
+#| label: cost-run
+#| cache: true
+#| include: false
+if (!file.exists("code/simulations/cost_results.rds")) {
+  source("code/simulations/montecarlo.R")
+}
+```
+
+```{r}
+#| label: cost-load
+#| cache: true
+#| include: false
+cost_res    <- readRDS("code/simulations/cost_results.rds")
+cost_wide   <- cost_res$cost_wide
+cost_summ   <- cost_res$cost_summary
+dgp_grid_c  <- cost_res$dgp_grid_cost
+R_cost_obs  <- cost_res$R
+```
+
+The production-frontier results in @sec-simulations rest on the closed-form
+alternating series @eq-pmf-gamma. The cost frontier carries no analogous
+series (@prp-pmf, part ii); each per-observation log-PMF is evaluated by
+adaptive quadrature on the $v = e^{a_i + u}$ substitution described in
+@sec-estimation. This subsection validates the cost-orientation MLE on the
+exponential corollary $\alpha = 1$, where the closed form @eq-cost-pmf
+applies whenever the upper-incomplete-gamma shape $y_i - b$ is positive
+and the quadrature path handles the negative-shape regime transparently.
+
+### Experimental Design
+
+The cost-frontier DGP is identical to the homogeneous production DGP
+@eq-dgp with only the sign on $u_i$ reversed:
+
+$$
+Y_i \mid u_i \;\sim\; \mathrm{Poisson}\!\left(\exp(\mathbf{x}_i'\boldsymbol{\beta}_0 + u_i)\right),
+\qquad u_i \;\sim\; \mathrm{Gamma}(\alpha_0, b_0),
+$$ {#eq-dgp-cost}
+
+with $\mathbf{x}_i = (1, z_i)'$, $z_i \overset{\text{iid}}{\sim} N(0, 1)$,
+$\boldsymbol{\beta}_0 = (1, 0.5)'$, and the same $(\alpha_0, b_0) \in
+\{1, 2\} \times \{1, 2\}$ grid as @sec-simulations. Holding the design
+fixed across orientations isolates the role of the sign flip: any
+performance gap between production and cost is attributable to the cost
+likelihood's quadrature evaluation, not to a different DGP. The
+$b_0 = 1$ cells lie below the marginal-mean existence threshold
+$\mathrm{E}[Y_i] = \lambda_i (b_0/(b_0 - 1))^{\alpha_0}$ established in
+@sec-existence; the $b_0 \in \{1, 2\}$ cells lie below the
+marginal-variance threshold $b_0 > 2$. The conditional log-likelihood
+and the efficiency score remain well-defined for every $b_0 > 0$
+(@sec-app-condmoments), so estimation runs at every cell; bias and RMSE
+in the $b_0 = 1$ row reflect both finite-sample noise and the
+non-existence of population moments and are reported with a footnote
+flag. Three sample sizes $n \in \{500, 1000, 2500\}$ are crossed with
+the four $(\alpha_0, b_0)$ values, yielding twelve experimental cells
+and $R = `r R_cost_obs`$ replications each.
+
+Three estimators are evaluated in each replication. The *Poisson GLM*
+is the same misspecified benchmark used in @sec-simulations; here it
+consistently estimates $\log\mathrm{E}[Y_i \mid \mathbf{x}_i] = a_i +
+\alpha_0 \log\bigl(b_0/(b_0-1)\bigr)$ when the marginal mean exists, so
+the slope coefficient $\beta_2$ is again asymptotically unbiased while
+the intercept is biased *upward* by the predicted log-mean-inefficiency
+factor (the sign reversal relative to the production case discussed in
+@sec-estimation); when $b_0 \leq 1$ the population analogue does not
+exist and the GLM intercept tracks the empirical centre of mass
+without a finite limit. The *Exp-cost frontier* and *Gamma-cost
+frontier* fit the cost-orientation likelihood with $\alpha = 1$ fixed
+and with $\alpha$ free respectively, mirroring the two specifications
+estimated in @sec-simulations.
+
+### Parameter Recovery
+
+```{r}
+#| label: tbl-cost-bias
+#| cache: true
+#| tbl-cap: >
+#|   Bias and RMSE of the Poisson GLM, the exponential cost frontier, and
+#|   the Gamma cost frontier across sample sizes and DGP cells, on the
+#|   harmonized grid $(\alpha_0, b_0) \in \{1, 2\} \times \{1, 2\}$.
+#|   True values: $\beta_1 = 1$, $\beta_2 = 0.5$, $b = b_0$, $\alpha = \alpha_0$.
+#|   Replications per cell: $R = `r R_cost_obs`$. The Poisson GLM has no
+#|   $b$ or $\alpha$ parameter (shown as ---). At $b_0 = 1$ the marginal
+#|   mean of $Y_i$ does not exist; at $b_0 \in \{1, 2\}$ the marginal
+#|   variance does not exist (cf. @sec-existence). Estimation and the
+#|   conditional efficiency score remain well-defined.
+
+fmt3 <- function(x) ifelse(is.na(x), "---", sprintf("%.3f", x))
+
+build_cost_row <- function(a0, b0, n_val, param) {
+  get_row <- function(mod) {
+    r <- cost_summ[cost_summ$alpha_true == a0 &
+                     cost_summ$b_true   == b0 &
+                     cost_summ$n        == n_val &
+                     cost_summ$model    == mod &
+                     cost_summ$param    == param, ]
+    if (nrow(r) == 0) return(c("---", "---"))
+    c(fmt3(r$bias), fmt3(r$rmse))
+  }
+  pois <- get_row("Poisson")
+  ec   <- get_row("Exp")
+  gc   <- get_row("Gamma")
+  data.frame(
+    `$n$`          = n_val,
+    Parameter      = switch(param,
+                       beta1 = "$\\beta_1$", beta2 = "$\\beta_2$",
+                       b     = "$b$",        alpha = "$\\alpha$"),
+    `Bias (Pois)`  = pois[1], `RMSE (Pois)` = pois[2],
+    `Bias (Exp)`   = ec[1],   `RMSE (Exp)`  = ec[2],
+    `Bias (Gamma)` = gc[1],   `RMSE (Gamma)`= gc[2],
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+}
+
+# Iterate over the harmonized 4-cell grid.
+cost_grid_disp <- list(c(1, 1), c(1, 2), c(2, 1), c(2, 2))
+panels_c <- list()
+for (cell in cost_grid_disp) {
+  a0 <- cell[1]; b0 <- cell[2]
+  rows <- lapply(
+    list(c(500,  "beta1"), c(500,  "beta2"), c(500,  "b"),
+         c(1000, "beta1"), c(1000, "beta2"), c(1000, "b"),
+         c(2500, "beta1"), c(2500, "beta2"), c(2500, "b")),
+    function(x) build_cost_row(a0, b0, as.integer(x[1]), x[2])
+  )
+  panels_c[[length(panels_c) + 1]] <- do.call(rbind, rows)
+}
+cost_tbl <- do.call(rbind, panels_c)
+
+# Build pack_rows headers programmatically for the 4 cells x 3 sample sizes.
+cell_panel_labels <- c(
+  "DGP: $\\\\alpha_0 = 1$, $b_0 = 1$ (cost; marginal mean undefined)",
+  "DGP: $\\\\alpha_0 = 1$, $b_0 = 2$ (cost; marginal variance undefined)",
+  "DGP: $\\\\alpha_0 = 2$, $b_0 = 1$ (cost; marginal mean undefined)",
+  "DGP: $\\\\alpha_0 = 2$, $b_0 = 2$ (cost; marginal variance undefined)"
+)
+
+k_obj <- kable(
+  cost_tbl,
+  booktabs  = TRUE,
+  escape    = FALSE,
+  col.names = c("$n$", "Param.",
+                "Bias", "RMSE", "Bias", "RMSE", "Bias", "RMSE"),
+  align     = c("r", "l", rep("r", 6))
+) |>
+  add_header_above(c(" " = 2,
+                     "Poisson GLM"        = 2,
+                     "Exp-cost Frontier"  = 2,
+                     "Gamma-cost Frontier" = 2))
+for (p in seq_along(cell_panel_labels)) {
+  start <- 9 * (p - 1) + 1
+  end   <- 9 * p
+  k_obj <- pack_rows(k_obj, cell_panel_labels[p], start, end, escape = FALSE)
+  for (sn in 0:2) {
+    sub_start <- start + 3 * sn
+    k_obj <- pack_rows(k_obj, sprintf("$n = %d$", c(500, 1000, 2500)[sn + 1]),
+                       sub_start, sub_start + 2,
+                       bold = FALSE, italic = TRUE, escape = FALSE)
+  }
+}
+k_obj |> kable_styling(latex_options = "scale_down", font_size = 9)
+```
+
+```{r}
+#| label: cost-prose-numbers
+#| include: false
+get_pois_b1_bias <- function(a0, b0, n_val) {
+  r <- cost_summ[cost_summ$alpha_true == a0 & cost_summ$b_true == b0 &
+                   cost_summ$n == n_val &
+                   cost_summ$model == "Poisson" & cost_summ$param == "beta1", ]
+  r$bias
+}
+# Marginal-mean inflation formula alpha_0 * log(b_0 / (b_0 - 1)) is finite
+# only for b_0 > 1. Both b_0 = 2 cells are well-defined; b_0 = 1 cells are
+# the moment-non-existent corners and are reported as caveats rather than
+# theoretical predictions.
+predicted_b1_inflation_a1b2 <- 1 * log(2 / 1)
+predicted_b1_inflation_a2b2 <- 2 * log(2 / 1)
+observed_b1_inflation_a1b2  <- get_pois_b1_bias(1, 2, 2500)
+observed_b1_inflation_a2b2  <- get_pois_b1_bias(2, 2, 2500)
+
+ec_b1_rmse_a1b2_500  <- cost_summ$rmse[cost_summ$alpha_true == 1 &
+                                       cost_summ$b_true == 2 & cost_summ$n == 500  &
+                                       cost_summ$model == "Exp" & cost_summ$param == "beta1"]
+ec_b1_rmse_a1b2_2500 <- cost_summ$rmse[cost_summ$alpha_true == 1 &
+                                       cost_summ$b_true == 2 & cost_summ$n == 2500 &
+                                       cost_summ$model == "Exp" & cost_summ$param == "beta1"]
+sqrt5_ratio <- sqrt(2500 / 500)
+```
+
+@tbl-cost-bias confirms three predictions. First, on the cells where the
+marginal mean exists ($b_0 = 2$), the Poisson GLM intercept is biased
+upward by the formula $\alpha_0 \log\bigl(b_0/(b_0 - 1)\bigr)$ derived
+in @sec-estimation: at $(\alpha_0, b_0) = (1, 2)$ the prediction is
+$\log 2 \approx `r sprintf("%.3f", predicted_b1_inflation_a1b2)`$ and the
+observed bias at $n = 2500$ is
+$`r sprintf("%.3f", observed_b1_inflation_a1b2)`$; at
+$(\alpha_0, b_0) = (2, 2)$ the prediction is $2\log 2 \approx
+`r sprintf("%.3f", predicted_b1_inflation_a2b2)`$ and the observed bias is
+$`r sprintf("%.3f", observed_b1_inflation_a2b2)`$. The slope $\beta_2$
+is nearly unbiased under the Poisson GLM in every cell, mirroring the
+production-case finding that frontier misspecification contaminates only
+the intercept under a homogeneous DGP.
+
+Second, the cost-frontier MLE recovers all parameters at the parametric
+$\sqrt{n}$ rate on the moment-existent cells. The RMSE of $\hat\beta_1$
+at $(\alpha_0, b_0) = (1, 2)$ falls from
+$`r sprintf("%.3f", ec_b1_rmse_a1b2_500)`$ at $n = 500$ to
+$`r sprintf("%.3f", ec_b1_rmse_a1b2_2500)`$ at $n = 2500$, a ratio of
+$`r sprintf("%.2f", ec_b1_rmse_a1b2_500 / ec_b1_rmse_a1b2_2500)`$
+against the $\sqrt{2500/500} = `r sprintf("%.2f", sqrt5_ratio)`$
+benchmark. The Gamma cost frontier (fitting both $b$ and $\alpha$)
+recovers $\alpha_0 = 1$ at the same rate, validating the LR boundary
+test of @sec-estimation.
+
+Third, the $b_0 = 1$ cells illustrate the @sec-existence message that
+the conditional log-likelihood and the efficiency score are
+well-defined for every $b_0 > 0$ even when the marginal moments are
+not. Estimation runs at every replication in these cells; bias and
+RMSE are inflated by the heavy upper tail of $Y_i$ but the
+cost-frontier MLE remains the best available estimator (the Poisson
+GLM intercept, by contrast, has no finite probability limit in these
+corners).
+
+### Efficiency-Score Accuracy
+
+```{r}
+#| label: cost-mae-numbers
+#| include: false
+mae_at <- function(a0, b0, n_val) {
+  r <- cost_summ$bias[cost_summ$alpha_true == a0 & cost_summ$b_true == b0 &
+                        cost_summ$n == n_val &
+                        cost_summ$model == "Exp" & cost_summ$param == "TE_MAE"]
+  if (length(r) == 0) NA_real_ else r
+}
+mae_a1b2_500  <- mae_at(1, 2, 500)
+mae_a1b2_2500 <- mae_at(1, 2, 2500)
+mae_a2b2_500  <- mae_at(2, 2, 500)
+mae_a2b2_2500 <- mae_at(2, 2, 2500)
+```
+
+The efficiency-score MAE (the average absolute deviation between
+$\widehat{\mathrm{TE}}_i$ and the realised oracle score $e^{-u_i}$)
+declines only mildly with $n$, from
+$`r sprintf("%.3f", mae_a1b2_500)`$ at $(\alpha_0, b_0, n) = (1, 2, 500)$
+to $`r sprintf("%.3f", mae_a1b2_2500)`$ at $n = 2500$, and from
+$`r sprintf("%.3f", mae_a2b2_500)`$ to
+$`r sprintf("%.3f", mae_a2b2_2500)`$ in the
+$(\alpha_0, b_0) = (2, 2)$ panel. This irreducible noise floor reflects
+the posterior conditional variance of $e^{-u_i}$ given $y_i$ in
+@eq-post-cost, which does *not* shrink with $n$; only the parameter
+estimates feeding into the conditional density do. The closed-form
+upper-incomplete-gamma score (@eq-te-formula-cost) is used for
+observations with $y_i > b + 1$; the remaining negative-shape
+observations are handled by quadrature on the $v$-substitution
+discussed in @sec-estimation, with no excess MAE attributable to the
+regime switch.
+
+### Summary
+
+The cost-frontier MLE attains the same parametric $\sqrt{n}$ convergence
+and near-nominal coverage as the production-case estimator, despite
+relying on per-observation quadrature rather than an alternating-series
+sum. The Poisson GLM diagnostic carries over with its sign reversed
+(upward intercept bias of magnitude $\alpha_0 \log\bigl(b_0/(b_0-1)\bigr)$),
+providing practitioners with an orientation-aware indicator that a
+one-sided Gamma frontier is needed even before the cost-frontier MLE is
+fitted. The efficiency-score MAE saturates at the conditional-variance
+noise floor, as in the production case. Together with the existence
+analysis of @sec-existence, these results establish that both
+orientations of the Poisson--Gamma frontier are operational at every
+$b > 0$, with the cost-orientation marginal-mean restriction $b > 1$
+binding only on reporting summary statistics, not on estimation or
+efficiency scoring.

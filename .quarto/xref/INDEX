@@ -1,0 +1,17 @@
+{
+  "index.qmd": {
+    "index.tex": "ff83014e"
+  },
+  "countSFA/vignettes/empirical-application.Rmd": {
+    "empirical-application.out.ipynb": "660ab261",
+    "empirical-application-preview.html": "f51dba87"
+  },
+  "countSFA/NEWS.md": {
+    "NEWS.out.ipynb": "6127cb18",
+    "NEWS-preview.html": "159b3007"
+  },
+  "countSFA/cran-comments.md": {
+    "cran-comments.out.ipynb": "2c4260e7",
+    "cran-comments-preview.html": "3d09d258"
+  }
+}

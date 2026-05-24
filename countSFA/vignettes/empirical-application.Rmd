@@ -1,0 +1,176 @@
+---
+title: "Empirical application: patents and R&D"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Empirical application: patents and R&D}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6,
+  fig.height = 4,
+  out.width = "75%"
+)
+```
+
+This vignette walks through the empirical application from
+Centorrino and Perez Urdiales (2026), fitting a Poisson stochastic
+frontier model to the canonical patents-R&D panel of Hausman, Hall,
+and Griliches (1984) using `countSFA`.
+
+## Data
+
+The cleaned panel ships with the package:
+
+```{r data}
+library(countSFA)
+data(patents)
+str(patents)
+```
+
+There are 346 manufacturing firms observed over five years (1968-1972),
+yielding 1730 firm-year observations. The outcome is the integer count
+of patent applications eventually granted in each year.
+
+```{r y-summary}
+summary(patents$patents)
+mean(patents$patents == 0)         # share of zero-patent observations
+var(patents$patents) / mean(patents$patents)   # variance-to-mean ratio
+```
+
+The variance-to-mean ratio far exceeds 1, so a plain Poisson model
+will under-state dispersion. The Poisson stochastic frontier
+attributes the excess dispersion to one-sided technical inefficiency.
+
+## Build the design matrix
+
+We include log R&D, log capital, the science-sector indicator, and
+year fixed effects:
+
+```{r design}
+X <- model.matrix(
+  ~ log_rd + log_k + science_sector + factor(year),
+  data = patents
+)
+y <- patents$patents
+dim(X)
+```
+
+## Fit the models
+
+### Pooled Poisson GLM (misspecified benchmark)
+
+```{r poisson-glm}
+fit_pois <- glm(y ~ X - 1, family = poisson())
+ll_pois  <- as.numeric(logLik(fit_pois))
+ll_pois
+```
+
+### Exponential frontier
+
+```{r exp-frontier}
+fit_exp <- fit_poisson_frontier(y, X, dist = "exponential")
+fit_exp$loglik
+fit_exp$b          # rate of the exponential inefficiency
+fit_exp$K          # series truncation auto-selected from the GLM warm-start
+```
+
+The auto-K rule chose `r fit_exp$K` because the maximum fitted Poisson
+mean drives the convergence boundary of the alternating series
+(see `?fit_poisson_frontier`).
+
+### Gamma frontier
+
+The Gamma frontier on this dataset converges to alpha ~ 1, i.e.\ the
+exponential boundary --- the data carry little information about the
+shape parameter beyond what the exponential captures. This is the
+weak-alpha-identification phenomenon documented in the paper's Monte
+Carlo study, and on this particular sample the optimiser at the
+boundary produces a singular Hessian, so we wrap the call in
+`tryCatch`:
+
+```{r gamma-frontier}
+fit_gam <- tryCatch(
+  suppressWarnings(fit_poisson_frontier(y, X, dist = "gamma")),
+  error = function(e) {
+    message("Gamma fit failed at the alpha boundary: ", conditionMessage(e))
+    NULL
+  }
+)
+if (!is.null(fit_gam)) {
+  c(alpha = fit_gam$alpha, b = fit_gam$b, loglik = fit_gam$loglik)
+}
+```
+
+## Compare the models
+
+`compare_models()` returns a kable-ready summary:
+
+```{r compare}
+fits <- list(Exponential = fit_exp)
+if (!is.null(fit_gam)) fits$Gamma <- fit_gam
+compare_models(fits)
+```
+
+For non-nested comparisons (e.g.\ exponential frontier versus the
+Poisson half-normal benchmark), use the Vuong (1989) test. The
+half-normal model is fit by maximum simulated likelihood; the chunk
+below is shown for reference but not executed at vignette build time
+because the MSL fit on a real-world panel takes several minutes:
+
+```{r halfnormal-vuong, eval = FALSE}
+fit_phn <- fit_poisson_halfnormal(y, X)
+v <- vuong_test(fit_exp, fit_phn, y, X)
+v$statistic
+v$p_value
+v$decision
+```
+
+On the full patent panel, the exponential frontier is preferred over
+the half-normal benchmark (V = 3.76, p = 0.0002).
+
+## Posterior efficiency scores
+
+For the exponential frontier, the posterior mean
+\eqn{\mathrm{E}[e^{-u_i} \mid y_i, x_i]} has a closed form:
+
+```{r efficiency}
+scores <- efficiency_scores(fit_exp, y, X)
+head(scores)
+mean(scores$eff_score)
+```
+
+A simple histogram of the firm-level efficiency scores:
+
+```{r eff-hist}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+  ggplot(scores, aes(x = eff_score)) +
+    geom_histogram(bins = 40, fill = "steelblue", colour = "white") +
+    geom_vline(xintercept = mean(scores$eff_score),
+               linetype = "dashed", colour = "firebrick") +
+    labs(x = "Technical efficiency score", y = "Count") +
+    theme_bw()
+}
+```
+
+The mass below 1 indicates that the average firm produces only a
+fraction of its frontier patent output --- the central object of
+interest in stochastic frontier analysis.
+
+## References
+
+- Centorrino, S. and Perez Urdiales, M. (2026). *Count Data Stochastic
+  Frontier Models with Gamma Inefficiency*. Working paper.
+- Fé, E. and Hofler, R. A. (2013). Count data stochastic frontier
+  models, with an application to the patents-R&D relationship.
+  *Journal of Productivity Analysis* **39**, 271-284.
+- Hausman, J. A., Hall, B. H., and Griliches, Z. (1984). Econometric
+  models for count data with an application to the patents-R&D
+  relationship. *Econometrica* **52**, 909-938.
+- Vuong, Q. H. (1989). Likelihood ratio tests for model selection and
+  non-nested hypotheses. *Econometrica* **57**, 307-333.

@@ -1,0 +1,6 @@
+# R Data files #
+###################
+*.rdb
+*.Rdata
+*.rdx
+*.csv

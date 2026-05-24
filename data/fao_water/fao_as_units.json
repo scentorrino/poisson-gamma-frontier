@@ -1,0 +1,186 @@
+{
+  "HA": [
+    "FAO_AS_4100",
+    "FAO_AS_4101",
+    "FAO_AS_4102",
+    "FAO_AS_4103",
+    "FAO_AS_4300",
+    "FAO_AS_4303",
+    "FAO_AS_4304",
+    "FAO_AS_4307",
+    "FAO_AS_4308",
+    "FAO_AS_4309",
+    "FAO_AS_4310",
+    "FAO_AS_4311",
+    "FAO_AS_4312",
+    "FAO_AS_4313",
+    "FAO_AS_4314",
+    "FAO_AS_4315",
+    "FAO_AS_4316",
+    "FAO_AS_4317",
+    "FAO_AS_4318",
+    "FAO_AS_4326",
+    "FAO_AS_4379",
+    "FAO_AS_4400",
+    "FAO_AS_4401",
+    "FAO_AS_4461",
+    "FAO_AS_4469",
+    "FAO_AS_HIPCA",
+    "FAO_AS_HITCA"
+  ],
+  "IH": [
+    "FAO_AS_4104",
+    "FAO_AS_4105",
+    "FAO_AS_4106",
+    "FAO_AS_4403",
+    "FAO_AS_4473"
+  ],
+  "IH_KM2": [
+    "FAO_AS_4107"
+  ],
+  "0_TO_1": [
+    "FAO_AS_4111",
+    "FAO_AS_4537"
+  ],
+  "USD": [
+    "FAO_AS_4112",
+    "FAO_AS_4458",
+    "FAO_AS_4546",
+    "FAO_AS_4547",
+    "FAO_AS_4548"
+  ],
+  "PT_GDP": [
+    "FAO_AS_4113"
+  ],
+  "PT_POP": [
+    "FAO_AS_4114",
+    "FAO_AS_4115",
+    "FAO_AS_4116",
+    "FAO_AS_4474"
+  ],
+  "M3_Y": [
+    "FAO_AS_4150",
+    "FAO_AS_4156",
+    "FAO_AS_4157",
+    "FAO_AS_4182",
+    "FAO_AS_4185",
+    "FAO_AS_4187",
+    "FAO_AS_4188",
+    "FAO_AS_4193",
+    "FAO_AS_4194",
+    "FAO_AS_4195",
+    "FAO_AS_4196",
+    "FAO_AS_4250",
+    "FAO_AS_4253",
+    "FAO_AS_4260",
+    "FAO_AS_4261",
+    "FAO_AS_4262",
+    "FAO_AS_4263",
+    "FAO_AS_4264",
+    "FAO_AS_4269",
+    "FAO_AS_4270",
+    "FAO_AS_4460",
+    "FAO_AS_4475",
+    "FAO_AS_4476",
+    "FAO_AS_4477",
+    "FAO_AS_4491",
+    "FAO_AS_4493",
+    "FAO_AS_4509",
+    "FAO_AS_4510",
+    "FAO_AS_4516",
+    "FAO_AS_4517",
+    "FAO_AS_4536",
+    "FAO_AS_4549",
+    "FAO_AS_DIRUSE",
+    "FAO_AS_GW_ACCT",
+    "FAO_AS_SW_ACCT"
+  ],
+  "MM_Y": [
+    "FAO_AS_4151",
+    "FAO_AS_4472"
+  ],
+  "M3_IH_Y": [
+    "FAO_AS_4158",
+    "FAO_AS_4190",
+    "FAO_AS_4257"
+  ],
+  "PT": [
+    "FAO_AS_4192",
+    "FAO_AS_4445",
+    "FAO_AS_4446",
+    "FAO_AS_4463",
+    "FAO_AS_4464",
+    "FAO_AS_AEFI"
+  ],
+  "KM3": [
+    "FAO_AS_4197"
+  ],
+  "IX": [
+    "FAO_AS_4198",
+    "FAO_AS_4532",
+    "FAO_AS_4558",
+    "FAO_AS_4568",
+    "FAO_AS_4569",
+    "FAO_AS_4570",
+    "FAO_AS_INDWW",
+    "FAO_AS_MUNWW"
+  ],
+  "PT_FRSH_WAT_WTDRL": [
+    "FAO_AS_4254"
+  ],
+  "PT_RNW_WAT_RSC": [
+    "FAO_AS_4273"
+  ],
+  "PT_CLA": [
+    "FAO_AS_4305",
+    "FAO_AS_4331"
+  ],
+  "PT_WAT_AGR": [
+    "FAO_AS_4319"
+  ],
+  "PT_IRR_LA_PEQ": [
+    "FAO_AS_4327"
+  ],
+  "PT_IRR_LA_EQ": [
+    "FAO_AS_4328",
+    "FAO_AS_4544"
+  ],
+  "PT_PR_GRN": [
+    "FAO_AS_4329"
+  ],
+  "PT_POT_IRR_LA": [
+    "FAO_AS_4330"
+  ],
+  "PT_LAR": [
+    "FAO_AS_4470"
+  ],
+  "M3_IH": [
+    "FAO_AS_4471"
+  ],
+  "FAC": [
+    "FAO_AS_4515"
+  ],
+  "U": [
+    "FAO_AS_4541",
+    "FAO_AS_4542",
+    "FAO_AS_4543"
+  ],
+  "PT_AGR_IRR": [
+    "FAO_AS_4545"
+  ],
+  "PT_FRSH_WAT_RSC": [
+    "FAO_AS_4550"
+  ],
+  "USD_M3": [
+    "FAO_AS_4551",
+    "FAO_AS_4552",
+    "FAO_AS_4553",
+    "FAO_AS_4554"
+  ],
+  "PT_VA_AGR": [
+    "FAO_AS_4555"
+  ],
+  "RO": [
+    "FAO_AS_4557"
+  ]
+}

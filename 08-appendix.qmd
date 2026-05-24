@@ -1,0 +1,188 @@
+\appendix
+
+# Proofs {#sec-app-proofs .appendix}
+
+This appendix collects the proofs of the propositions stated in @sec-model
+and the derivational arguments supporting the existence claims of
+@sec-existence. The headline results (PMFs, efficiency-score formulas,
+moment expressions) and their interpretive discussion remain in the main
+text; only the technical arguments justifying them are lifted here.
+
+## Proof of Proposition @prp-pmf (Marginal PMF) {#sec-app-pmf-proof}
+
+*Production case.* Marginalising the conditional Poisson with $e^{-u_i}$
+against the Gamma density,
+
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
+= \frac{b^\alpha}{y!\,\Gamma(\alpha)}
+  \int_0^\infty e^{-\lambda_i e^{-u}}\,
+    \lambda_i^y\, e^{-yu}\, u^{\alpha-1}\, e^{-bu}\,\mathrm{d}u,
+$$ {#eq-marginalization}
+
+with $\lambda_i = \lambda(\mathbf{x}_i;\,\boldsymbol{\beta})$ entering through
+$a_i = \log\lambda_i$. Expand $e^{-\lambda_i e^{-u}}$ as its Maclaurin series
+in $\lambda_i e^{-u}$:
+
+$$
+e^{-\lambda_i e^{-u}}
+\;=\; \sum_{j=0}^\infty \frac{(-1)^j \lambda_i^j e^{-ju}}{j!}
+\;=\; \sum_{j=0}^\infty \frac{(-1)^j e^{j a_i} e^{-ju}}{j!}.
+$$ {#eq-maclaurin}
+
+The integral of the absolute value of the $j$-th term is
+$e^{ja_i}\Gamma(\alpha)/[j!(y+b+j)^\alpha]$. Since $(y+b+j)^{-\alpha} \leq
+b^{-\alpha}$ for all $y \geq 0$, $j \geq 0$ and $\alpha > 0$, summing
+over $j$ gives
+$\Gamma(\alpha)\sum_{j=0}^\infty e^{ja_i}/[j!\,(y+b+j)^\alpha]
+\leq \Gamma(\alpha)\,b^{-\alpha}\sum_{j=0}^\infty e^{ja_i}/j!
+= \Gamma(\alpha)\,b^{-\alpha}\,e^{e^{a_i}} < \infty$
+for all finite $a_i$, so Fubini's theorem permits the exchange of sum and
+integral. Substituting @eq-maclaurin into @eq-marginalization and integrating
+term by term (using
+$\int_0^\infty u^{\alpha-1}\, e^{-(y + b + j)u}\,\mathrm{d}u = \Gamma(\alpha)/(y+b+j)^\alpha$
+and cancelling $\Gamma(\alpha)$) gives @eq-pmf-gamma.
+
+*Cost case.* The analogous marginalisation with $\lambda_i e^{+u}$ in place
+of $\lambda_i e^{-u}$ yields
+
+$$
+\Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
+= \frac{b^\alpha}{y!\,\Gamma(\alpha)}
+  \int_0^\infty e^{-\lambda_i e^{u}}\,
+    \lambda_i^y\, e^{yu}\, u^{\alpha-1}\, e^{-bu}\,\mathrm{d}u,
+$$ {#eq-gamma-integral-cost}
+
+which collects to @eq-pmf-gamma-cost on writing
+$\lambda_i^y\, e^{yu} = e^{a_i y}\, e^{yu}$ and
+$e^{-\lambda_i e^{u}} = \exp(-e^{a_i + u})$. The integrand is integrable on
+$(0, \infty)$: as $u \to \infty$ the double-exponential factor
+$\exp(-e^{a_i + u})$ dominates the algebraic-times-exponential growth from
+$u^{\alpha-1}\, e^{(y-b)u}$ for any finite $b$ and $y \geq 0$; near
+$u = 0^+$ the prefactor $\exp(-e^{a_i + u})$ is continuous and bounded on
+any neighbourhood $[0, u_*]$, so the integrand is bounded by a constant
+multiple of $u^{\alpha-1}$, which is integrable for every $\alpha > 0$.
+The Maclaurin expansion
+$\exp(-e^{a_i + u}) = \sum_{j \geq 0} (-1)^j e^{j(a_i + u)}/j!$ that delivered
+the production series cannot be integrated term by term here, because the
+resulting inner integrals
+$\int_0^\infty u^{\alpha-1}\, e^{(y + j - b)u}\,\mathrm{d}u$ diverge for every
+$j \geq b - y$. No convergent term-by-term series via this Maclaurin
+expansion is therefore available, and direct numerical quadrature of
+@eq-pmf-gamma-cost is required.
+
+
+## Proof of Proposition @prp-te (Conditional efficiency score) {#sec-app-te-proof}
+
+In either orientation the conditional expectation is the ratio
+$$
+\mathrm{E}\!\left[e^{-u_i}\mid Y_i = y_i,\, \mathbf{x}_i\right]
+= \frac{\displaystyle\int_0^\infty e^{-u}\,
+        f(Y_i = y_i \mid u,\, \mathbf{x}_i)\, f(u)\,\mathrm{d}u}
+       {\displaystyle\int_0^\infty
+        f(Y_i = y_i \mid u,\, \mathbf{x}_i)\, f(u)\,\mathrm{d}u},
+$$
+whose denominator is the marginal PMF from @prp-pmf and whose numerator
+carries an additional factor of $e^{-u}$.
+
+*Production case.* The extra $e^{-u}$ replaces $e^{-(y_i+b)u}$ by
+$e^{-(y_i+b+1)u}$ in @eq-marginalization. The same Maclaurin expansion and
+term-by-term integration as in the proof of @prp-pmf (with $(y_i + b + j)$
+replaced by $(y_i + b + 1 + j)$, the dominating sum still bounded by
+$\Gamma(\alpha)\,b^{-\alpha}\,e^{e^{a_i}}$ since $(y_i+b+1+j)^{-\alpha} \leq
+b^{-\alpha}$, so Fubini again applies) gives
+$$
+\int_0^\infty e^{-u}\, f(Y_i = y_i \mid u,\, \mathbf{x}_i)\, f(u)\,\mathrm{d}u
+\;=\; \frac{b^\alpha e^{a_i y_i}}{y_i!}
+  \sum_{j=0}^\infty \frac{(-1)^j e^{j a_i}}{j!\,(y_i+b+1+j)^\alpha}.
+$$
+Dividing by @eq-pmf-gamma and cancelling $b^\alpha e^{a_i y_i}/y_i!$ yields
+@eq-te-gamma.
+
+*Cost case.* The extra $e^{-u}$ shifts the linear-in-$u$ exponent in
+@eq-gamma-integral-cost from $(y_i - b)u$ to $(y_i - b - 1)u$, giving
+$$
+\int_0^\infty e^{-u}\, f(Y_i = y_i \mid u,\, \mathbf{x}_i)\, f(u)\,\mathrm{d}u
+\;=\; \frac{b^\alpha e^{a_i y_i}}{y_i!\,\Gamma(\alpha)}
+  \int_0^\infty u^{\alpha-1}\,
+     \exp\!\bigl((y_i - b - 1)u - e^{a_i + u}\bigr)\,\mathrm{d}u.
+$$
+The double-exponential factor $\exp(-e^{a_i + u})$ damps the integrand for
+any real coefficient on $u$, so the numerator is finite by the same argument
+as @eq-pmf-gamma-cost. Dividing by @eq-pmf-gamma-cost and cancelling the
+prefactor yields @eq-te-gamma-cost.
+
+
+## Well-definedness of the PMF and log-likelihood for all $b > 0$ {#sec-app-likelihood}
+
+The PMFs @eq-pmf-gamma and @eq-pmf-gamma-cost are well-defined for all
+$b > 0$. In the cost integral @eq-gamma-integral-cost, the
+double-exponential factor $\exp(-e^{a_i + u})$ dominates the
+algebraic-times-exponential factor $u^{\alpha-1}\, e^{(y-b)u}$ as
+$u \to \infty$ regardless of the sign of $y - b$; integrability at
+$u = 0^+$ follows because the integrand is bounded by a constant multiple
+of $u^{\alpha-1}$ in a neighbourhood of zero, which is integrable for any
+$\alpha > 0$. For the production series @eq-pmf-gamma the ratio of
+successive term magnitudes is $|t_{j+1}|/|t_j| = e^{a_i}\,[(y+b+j)/(y+b+j+1)]^\alpha
+/(j+1) \to 0$ as $j \to \infty$, so the series converges absolutely with
+no restriction on $b$.
+
+Because the log-likelihood depends only on the PMF, it is well-defined for
+all $b > 0$ in both orientations. The regularity conditions of
+@neweyMcFadden1994 [Theorems 2.5 and 3.3] (identifiability, compactness
+of a set containing the true parameter, continuity with a uniform
+law-of-large-numbers bound, and non-singular Fisher information)
+therefore yield consistency and $\sqrt{n}$-asymptotic normality of the
+MLE. In the Gamma frontier these conditions hold provided $\alpha$ is
+bounded away from zero and $b$ is bounded away from zero and infinity; the
+shape parameter $\alpha$ may be weakly identified in small samples or
+shallow panels, a phenomenon documented in @sec-simulations.
+
+
+## Existence of conditional moments $\mathrm{E}[e^{r u_i} \mid y_i,\, \mathbf{x}_i]$ {#sec-app-condmoments}
+
+The conditional efficiency scores @eq-te-gamma and @eq-te-gamma-cost are
+*conditional* moments of $e^{-u_i}$ given $y_i$, not the unconditional
+moments of the Gamma random variable. The two are not interchangeable:
+conditioning on $y_i$ inserts a Poisson-likelihood factor into the
+conditional density that strictly enlarges the set of $r$ for which
+$\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$ is finite.
+
+In the production frontier,
+$Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{-u_i})$ implies the posterior
+density @eq-post-prod. As $u_i \to \infty$ the factor
+$\exp(-\lambda_i e^{-u_i})$ tends to $1$, so the tail is Gamma-like with
+rate $b + y_i$: more precisely, given $\varepsilon > 0$ there exists
+$M < \infty$ such that
+$1 - \varepsilon \leq \exp(-\lambda_i e^{-u_i}) \leq 1$ for all
+$u_i \geq M$. Hence
+$\int_M^\infty u^{\alpha-1}\, e^{(r-b-y_i)u}\, \exp(-\lambda_i e^{-u})\,
+\mathrm{d}u$ is finite iff $\int_M^\infty u^{\alpha-1}\, e^{(r-b-y_i)u}\,
+\mathrm{d}u$ is, which holds iff $r < b + y_i$. The conditional moment
+$\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$ is therefore finite if
+and only if $r < b + y_i$, which is automatic at $r = -1$ (the value
+entering @eq-te-gamma) for any $b > 0$ and $y_i \geq 0$.
+
+In the cost frontier,
+$Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{+u_i})$ yields the
+posterior density @eq-post-cost. The factor $\exp(-\lambda_i e^{u_i})$
+decays *super-exponentially* as $u_i \to \infty$ (it dominates any
+polynomial or exponential growth), and at $u_i = 0^+$ the integrand
+behaves like $u_i^{\alpha-1}\, \exp(-\lambda_i)$, integrable for every
+$\alpha > 0$. Both tails of the integrand defining
+$\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$ are therefore finite for
+*every* $r \in \mathbb{R}$, regardless of $b$. The cost-frontier
+efficiency score is well-defined for all $b > 0$, in marked contrast to
+the unconditional MGF $\mathrm{E}[e^{u_i}] = (b/(b-1))^\alpha$, which
+requires $b > 1$.
+
+In each orientation the denominator of the conditional expectation is the
+marginal PMF from @prp-pmf, which is strictly positive for every
+$y_i \in \mathbb{N}_0$ and every $(b, \alpha) \in (0,\infty)^2$; the
+ratio defining the conditional moment is therefore unambiguous.
+
+In short, the non-existence of the unconditional moment
+$\mathrm{E}[e^{u_i}]$ when $b \leq 1$ does *not* propagate to the
+conditional. Conditioning strictly enlarges the parameter region in which
+moments are finite, because the Poisson likelihood supplies additional
+damping in the right tail of $u_i$ that the Gamma density alone does not.

@@ -1,0 +1,203 @@
+{
+  "demand_side": [
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Self-closing valves, i.e. closing automatically after operation, in which the closing movement, either retarded or not, starts immediately\nafter opening",
+      "ipc_cpc": "F16K21/06-12"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Self-closing valves, i.e. closing automatically after operation, closing after a predetermined quantity of fluid has been delivered",
+      "ipc_cpc": "F16K 21/16-20"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Arrangement or mounting of devices, e.g. valves, for venting or aerating or draining",
+      "ipc_cpc": "F16L 55/07"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Jet regulators with aerating means",
+      "ipc_cpc": "E03C 1/084"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Flushing devices discharging variable quantities of water",
+      "ipc_cpc": "E03D 3/12"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Cisterns discharging variable quantities of water",
+      "ipc_cpc": "E03D 1/14"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Urinals without flushing",
+      "ipc_cpc": "A47K 11/12"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Dry closets",
+      "ipc_cpc": "A47K 11/02"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Waterless or low-flush urinals",
+      "ipc_cpc": "E03D13/007"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Special constructions of flushing devices with recirculation of bowl-cleaning fluid",
+      "ipc_cpc": "E03D5/016"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Greywater supply systems",
+      "ipc_cpc": "E03B1/041"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Optimisation of water quantity (for dishwashers)",
+      "ipc_cpc": "Y02B 40/46"
+    },
+    {
+      "subcategory": "2.1.1. Indoor water conservation",
+      "description": "Optimisation of water quantity  (for washing machines)",
+      "ipc_cpc": "Y02B 40/56"
+    },
+    {
+      "subcategory": "2.1.2. Irrigation water conservation",
+      "description": "Watering arrangements located above the soil which make use of perforated pipe-lines or pipe-lines with dispensing fittings, e.g. for drip\nirrigation",
+      "ipc_cpc": "A01G 25/02"
+    },
+    {
+      "subcategory": "2.1.2. Irrigation water conservation",
+      "description": "Watering arrangements making use of perforated pipe-lines located in the soil",
+      "ipc_cpc": "A01G 25/06"
+    },
+    {
+      "subcategory": "2.1.2. Irrigation water conservation",
+      "description": "Control of watering",
+      "ipc_cpc": "A01G 25/16"
+    },
+    {
+      "subcategory": "2.1.2. Irrigation water conservation",
+      "description": "Mutation or genetic engineering; DNA or RNA concerning genetic engineering, vectors, e.g. plasmids, or their isolation, preparation or purification; for drought, cold, salt resistance",
+      "ipc_cpc": "C12N15/8273"
+    },
+    {
+      "subcategory": "2.1.3. Water conservation in thermoelectric power production",
+      "description": "Combustion heat from one cycle heating the fluid in another cycle",
+      "ipc_cpc": "F01K 23/08-10"
+    },
+    {
+      "subcategory": "2.1.3. Water conservation in thermoelectric power production",
+      "description": "Non-positive-displacement machines or engines, e.g. steam turbines / Preventing or minimizing  internal leakage of working fluid, e.g.\nbetween stages",
+      "ipc_cpc": "F01D 11"
+    },
+    {
+      "subcategory": "2.1.4. Water distribution",
+      "description": "Pipe-line systems / Protection or supervision of installations / Preventing, monitoring, or locating loss",
+      "ipc_cpc": "[F17D5/02 and E03]"
+    },
+    {
+      "subcategory": "2.1.4. Water distribution",
+      "description": "Devices for covering leaks in pipes or hoses, e.g. hose-menders",
+      "ipc_cpc": "[F16L55/16 and\nE03]"
+    },
+    {
+      "subcategory": "2.1.4. Water distribution",
+      "description": "Investigating fluid tightness of structures, by detecting the presence of fluid at the leakage point",
+      "ipc_cpc": "[G01M 3/08 or G01M 3/14 or G01M 3/18 or G01M 3/22 or G01M 3/28] and\nE03"
+    }
+  ],
+  "pollution_abatement": [
+    {
+      "subcategory": "1.2.1. Water and wastewater treatment",
+      "description": "Arrangements of installations for treating waste-water or sewage",
+      "ipc_cpc": "B63J4"
+    },
+    {
+      "subcategory": "1.2.1. Water and wastewater treatment",
+      "description": "Treatment of water, waste water, sewage or sludge",
+      "ipc_cpc": "C02F"
+    },
+    {
+      "subcategory": "1.2.1. Water and wastewater treatment",
+      "description": "Chemistry; Materials for treating liquid pollutants, e.g. oil, gasoline, fat",
+      "ipc_cpc": "C09K3/32"
+    },
+    {
+      "subcategory": "1.2.1. Water and wastewater treatment",
+      "description": "Plumbing installations for waste water",
+      "ipc_cpc": "E03C1/12"
+    },
+    {
+      "subcategory": "1.2.1. Water and wastewater treatment",
+      "description": "Sewers \u2013 Cesspools",
+      "ipc_cpc": "E03F"
+    },
+    {
+      "subcategory": "1.2.2. Fertilizers from wastewater",
+      "description": "Fertilisers from waste water, sewage sludge, sea slime, ooze or similar masses",
+      "ipc_cpc": "C05F7"
+    },
+    {
+      "subcategory": "1.2.3. Oil spill cleanup",
+      "description": "Devices  for  cleaning  or  keeping  clear  the  surface  of  open  water  from  oil  or  like  floating  materials  by  separating  or  removing  these materials",
+      "ipc_cpc": "E02B15/04-10"
+    },
+    {
+      "subcategory": "1.2.3. Oil spill cleanup",
+      "description": "Vessels or like floating structures adapted for special purposes - for collecting pollution from open water",
+      "ipc_cpc": "B63B35/32"
+    },
+    {
+      "subcategory": "1.2.3. Oil spill cleanup",
+      "description": "Materials for treating liquid pollutants, e.g. oil, gasoline or fat",
+      "ipc_cpc": "C09K 3/32"
+    }
+  ],
+  "supply_side": [
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Use of pumping plants or installations",
+      "ipc_cpc": "E03B 5"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Methods or installations for obtaining or collecting drinking water or tap water from underground",
+      "ipc_cpc": "E03B 3/06-26"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Methods or installations for drawing-off water",
+      "ipc_cpc": "E03B 9"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Methods or installations for obtaining or collecting drinking water or tap water from surface water",
+      "ipc_cpc": "E03B 3/04; E03B 3/28-38"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Methods or installations for obtaining or collecting drinking water or tap water from rainwater",
+      "ipc_cpc": "E03B 3/02"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Special vessels for collecting or storing rain-water for use in the household, e.g. water-butts",
+      "ipc_cpc": "E03B 3/03"
+    },
+    {
+      "subcategory": "2.2.1. Water collection (rain, surface and ground-water)",
+      "description": "Methods or installations for obtaining or collecting drinking water or tap water; rainwater, surface water, or groundwater",
+      "ipc_cpc": "E03B 3/00; E03B 3/40"
+    },
+    {
+      "subcategory": "2.2.2. Water storage",
+      "description": "Arrangements or adaptations of tanks for water supply",
+      "ipc_cpc": "E03B 11"
+    }
+  ]
+}

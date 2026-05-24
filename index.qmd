@@ -1,0 +1,25 @@
+---
+title: "Count Data Stochastic Frontier Models with Gamma Inefficiency"
+thanks: "The opinions expressed are those of the authors and do not necessarily reflect the views of the IDB, its Board of Directors, or its member countries. It also stipulates that the IDB makes no warranties regarding the accuracy, reliability, or completeness of the information."
+abstract: |
+  We propose a stochastic frontier model for count data where the output follows a Poisson distribution conditional on a Gamma-distributed inefficiency term. The marginal probability mass function admits an absolutely convergent
+  alternating-series representation in the production-frontier case and a one-dimensional integral evaluable by adaptive quadrature in the cost-frontier case, both delivering deterministic maximum-likelihood estimation without simulation. The exponential special case admits a closed-form likelihood function through the lower and upper incomplete gamma functions respectively. The framework extends to inefficiency determinants via a scaling model that preserves the same properties, and is validated through Monte Carlo experiments covering both cases. An empirical application to patent counts illustrates that the model recovers interpretable firm-level technical efficiency scores.
+keywords: [Stochastic Frontier, Count data, Poisson, Gamma inefficiency, Maximum Likelihood]
+---
+
+{{< include 01-introduction.qmd >}}
+
+{{< include 02-model.qmd >}}
+
+{{< include 03-gamma-generalization.qmd >}}
+
+{{< include 04-estimation.qmd >}}
+
+{{< include 05-simulations.qmd >}}
+
+{{< include 06-empirical.qmd >}}
+
+{{< include 07-conclusion.qmd >}}
+
+{{< include 08-appendix.qmd >}}
+

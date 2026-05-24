@@ -1,0 +1,38 @@
+Package: countSFA
+Type: Package
+Title: Count-Data Stochastic Frontier Models
+Version: 0.5.0
+Authors@R: person("Samuele", "Centorrino",
+                  email = "scentorrino@proton.me",
+                  role = c("aut", "cre"))
+Description: Maximum likelihood estimation of Poisson stochastic frontier
+    models for count outcomes. Supports three parametric families for the
+    one-sided inefficiency term: the exponential distribution, with a
+    closed-form marginal probability mass function via the lower
+    incomplete gamma function; the general Gamma distribution, with a
+    marginal PMF expressible as an absolutely convergent alternating
+    series and an automatically chosen truncation depth; and the
+    half-normal distribution of Fé and Hofler (2013)
+    <doi:10.1007/s11123-012-0286-y>, evaluated by maximum simulated
+    likelihood with antithetic Halton draws. Provides PMF evaluation,
+    MLE fitting with log-scale reparameterisation, posterior technical
+    efficiency scores, model comparison utilities (likelihood-ratio and
+    Vuong (1989) <doi:10.2307/1912557> tests), and helpers for
+    cross-orientation use (production and cost frontiers).
+License: MIT + file LICENSE
+URL: https://github.com/scentorrino/countSFA
+BugReports: https://github.com/scentorrino/countSFA/issues
+Encoding: UTF-8
+Depends:
+    R (>= 3.5.0)
+Imports:
+    stats
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    ggplot2
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+LazyData: true
+RoxygenNote: 7.3.3
