@@ -65,7 +65,7 @@ The first of these conditions is the one [@feHofler2013, fn. 7] flags for the ha
 
 ## PMF, Likelihood, and Conditional Moment Existence
 
-The PMFs @eq-pmf-gamma and @eq-pmf-gamma-cost are well-defined for all $b > 0$: in each orientation a super-exponential factor dominates the polynomial growth from $u^{\alpha-1}$, ensuring absolute convergence of
+The PMFs @eq-pmf-gamma and @eq-pmf-gamma-cost are well-defined for all $b > 0$: in each orientation a factor that decays faster than any exponential dominates the polynomial growth from $u^{\alpha-1}$, ensuring absolute convergence of
 the alternating series (production) or finiteness of the integrand (cost) with no restriction on $b$. The detailed argument is given in Appendix. Because the log-likelihood depends only on the PMF, it inherits well-definedness on the entire interior of the parameter space. Under the regularity conditions of @neweyMcFadden1994 [Theorems 2.5 and 3.3], which hold whenever $\alpha$ is bounded away from zero and $b$ is bounded away from zero and infinity, the MLE is consistent and $\sqrt{n}$-asymptotically normal.
 
 ## Conditional moments and the efficiency score

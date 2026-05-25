@@ -75,10 +75,10 @@ $$
      \exp\!\bigl((y - b)\,u \,-\, e^{a_i + u}\bigr)\,\mathrm{d}u,
 $$ {#eq-pmf-gamma-cost}
 
-whose integrand is super-exponentially damped as $u \to \infty$ and integrable at $u = 0^+$ for every $\alpha > 0$, so the integral is finite for all $b > 0$ and can be approximated by adaptive quadrature.
+whose integrand decays faster than any exponential as $u \to \infty$ (the doubly-exponential factor $\exp(-e^{a_i+u})$ overwhelms the linear-in-$u$ contribution $(y-b)\,u$) and is integrable at $u = 0^+$ for every $\alpha > 0$, so the integral is finite for all $b > 0$ and can be approximated by adaptive quadrature.
 :::
 
-Although @eq-pmf-gamma converges absolutely for every $\alpha > 0$, the alternating signs in $(-1)^j$ cause catastrophic cancellation once $e^{a_i}$ becomes moderate, and the cancellation pattern depends sensitively on $\alpha$: in the sub-exponential regime $\alpha < 1$ the term magnitudes decay more slowly so that summation loses many digits before the tail vanishes, while at the other extreme large $\alpha$ inflates the partial sums in absolute value relative to the small signed total. Signed log-sum-exp and series-acceleration techniques alleviate the loss but do not eliminate it across the full $(a_i, b, \alpha)$ grid encountered in estimation and Monte Carlo. We therefore do not evaluate the series numerically. Instead, we use the integral representation underlying @eq-pmf-gamma. Marginalising @eq-conditional under the production sign convention $Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{-u_i})$ gives
+Although the series in @eq-pmf-gamma converges absolutely for every $\alpha > 0$, its rate of convergence, and hence the accuracy of any finite-sample approximation, depend on $\alpha$: in the sub-exponential regime $\alpha < 1$ the term magnitudes decay more slowly so that summation loses many digits before the tail vanishes, while, at the other extreme, large $\alpha$ inflates the partial sums in absolute value relative to the small signed total. We therefore do not evaluate the series numerically. Instead, we use the integral representation underlying @eq-pmf-gamma. Marginalising @eq-conditional under the production sign convention $Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{-u_i})$ gives
 
 $$
 \Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
@@ -87,7 +87,7 @@ $$
      \exp\!\bigl(-(y + b)\,u \,-\, e^{a_i - u}\bigr)\,\mathrm{d}u,
 $$ {#eq-pmf-gamma-prod}
 
-a one-dimensional integral parallel to the cost-orientation expression @eq-pmf-gamma-cost. The integrand is integrable at $u = 0^+$ for every $\alpha > 0$ and super-exponentially damped as $u \to \infty$, so adaptive quadrature returns the production PMF accurately across the full $(a_i, b, \alpha)$ grid. The implementation in §4 uses this quadrature path for both orientations; the alternating-series form @eq-pmf-gamma is retained only for its analytic role in deriving the exponential corollary below.
+a one-dimensional integral parallel to the cost-orientation expression @eq-pmf-gamma-cost. The expression is integrable at $u = 0^+$ for every $\alpha > 0$, so adaptive quadrature returns the production PMF accurately across the full $(a_i, b, \alpha)$ grid. The implementation in @sec-estimation uses this quadrature path for both orientations; the alternating-series form @eq-pmf-gamma is retained only for its analytic role in deriving the exponential corollary below.
 
 ### The Exponential Corollary {#sec-pmf-exp}
 

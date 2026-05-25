@@ -164,8 +164,8 @@ entering @eq-te-gamma) for any $b > 0$ and $y_i \geq 0$.
 In the cost frontier,
 $Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{+u_i})$ yields the
 posterior density @eq-post-cost. The factor $\exp(-\lambda_i e^{u_i})$
-decays *super-exponentially* as $u_i \to \infty$ (it dominates any
-polynomial or exponential growth), and at $u_i = 0^+$ the integrand
+decays *faster than any exponential* as $u_i \to \infty$ (it dominates any
+polynomial or single-exponential growth), and at $u_i = 0^+$ the integrand
 behaves like $u_i^{\alpha-1}\, \exp(-\lambda_i)$, integrable for every
 $\alpha > 0$. Both tails of the integrand defining
 $\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$ are therefore finite for
