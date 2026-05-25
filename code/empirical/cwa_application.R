@@ -443,7 +443,7 @@ fit_gam <- if (do_gamma) cached(CACHE_GAM, quote({
 # orientation. Optimisation is full-information; the betas from M2/M3 serve
 # as warm starts for M4/M5.
 
-nll_scaling <- function(params, y, X, Z, alpha = NULL, K = 100,
+nll_scaling <- function(params, y, X, Z, alpha = NULL, K = NULL,
                         orientation = c("production", "cost")) {
   orientation <- match.arg(orientation)
   k <- ncol(X); m <- ncol(Z)
