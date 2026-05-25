@@ -16,7 +16,7 @@ options(knitr.table.format = if (knitr::is_latex_output()) "latex" else "html")
 #| label: mc-run
 #| cache: true
 #| include: false
-if (!file.exists("code/simulations/results.rds") ||
+if (!file.exists("code/simulations/prod_results.rds") ||
     !file.exists("code/simulations/cost_results.rds")) {
   source("code/simulations/montecarlo.R")
 }
@@ -101,7 +101,7 @@ build_summary_robust <- function(mc_wide, dgp_grid) {
   out
 }
 
-mc_prod <- readRDS("code/simulations/results.rds")
+mc_prod <- readRDS("code/simulations/prod_results.rds")
 mc_cost <- readRDS("code/simulations/cost_results.rds")
 
 mc_summary_prod              <- build_summary_robust(mc_prod$mc_wide, mc_prod$dgp_grid)

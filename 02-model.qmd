@@ -78,26 +78,16 @@ $$ {#eq-pmf-gamma-cost}
 whose integrand is super-exponentially damped as $u \to \infty$ and integrable at $u = 0^+$ for every $\alpha > 0$, so the integral is finite for all $b > 0$ and can be approximated by adaptive quadrature.
 :::
 
-The series in @eq-pmf-gamma converges absolutely because the ratio of consecutive absolute term sizes is
+Although @eq-pmf-gamma converges absolutely for every $\alpha > 0$, the alternating signs in $(-1)^j$ cause catastrophic cancellation once $e^{a_i}$ becomes moderate, and the cancellation pattern depends sensitively on $\alpha$: in the sub-exponential regime $\alpha < 1$ the term magnitudes decay more slowly so that summation loses many digits before the tail vanishes, while at the other extreme large $\alpha$ inflates the partial sums in absolute value relative to the small signed total. Signed log-sum-exp and series-acceleration techniques alleviate the loss but do not eliminate it across the full $(a_i, b, \alpha)$ grid encountered in estimation and Monte Carlo. We therefore do not evaluate the series numerically. Instead, we use the integral representation underlying @eq-pmf-gamma. Marginalising @eq-conditional under the production sign convention $Y_i \mid u_i \sim \mathrm{Poisson}(\lambda_i e^{-u_i})$ gives
 
 $$
-\frac{|t_{j+1}|}{|t_j|}
-= \underbrace{\frac{e^{a_i}}{j+1}}_{\text{geometric, } \alpha\text{-free}} \cdot
-  \underbrace{\left(\frac{y+b+j}{y+b+j+1}\right)^\alpha}_{\text{polynomial, decays faster as } \alpha\text{ grows}}
-\;\to\; 0 \quad \text{as } j \to \infty.
-$$ {#eq-pmf-ratio}
+\Pr(Y_i = y \mid \mathbf{x}_i,\, \alpha,\, b)
+\;=\; \frac{b^\alpha\, e^{a_i y}}{y!\,\Gamma(\alpha)}
+  \int_0^\infty u^{\alpha - 1}\,
+     \exp\!\bigl(-(y + b)\,u \,-\, e^{a_i - u}\bigr)\,\mathrm{d}u,
+$$ {#eq-pmf-gamma-prod}
 
-The leading factor in @eq-pmf-ratio is $\alpha$-free and drives the asymptotic convergence: once $j > e^{a_i}$ the ratio is below 1 regardless of $\alpha$. The second factor is the $\alpha$-dependent polynomial correction. Since $(y+b+j)/(y+b+j+1) \in (0,1)$, raising it to a power larger than 1 pushes it strictly below the linear baseline, accelerating decay; raising it to a power smaller than 1 pulls it back toward 1, so for $\alpha \ll 1$ the term-ratio is essentially $e^{a_i}/(j+1)$ alone. The size of $|t_K|$ at any truncation $K$ inherits the same monotonicity: applying Stirling's approximation $K! \sim K^K e^{-K}\sqrt{2\pi K}$ in $|t_K| = e^{K a_i}\bigl/\bigl[K!\,(y+b+K)^\alpha\bigr]$ gives
-$$
-\log|t_K| \;\approx\; K\,\bigl(a_i + 1 - \log K\bigr) \;-\; \bigl(\alpha + \tfrac{1}{2}\bigr)\log K \;+\; \mathrm{const},
-$$ {#eq-pmf-tail}
-where the first, $\alpha$-free term comes from the factorial and the second is the $\alpha$-dependent polynomial correction. For $K = c\,e^{a_i}$ with $c>1$, the first term reduces to $-c(\log c - 1)\, e^{a_i}$, super-exponentially small in $e^{a_i}$; the polynomial $-(\alpha + 1/2)\log K$ shrinks $|t_K|$ further when $\alpha \geq 1$ but contributes little once $\alpha \to 0^+$.
-
-Demanding $|t_K| < \varepsilon$ and solving @eq-pmf-tail for $K$ at fixed $a_i$ therefore gives an $\alpha$-aware rule
-$$
-K \;\geq\; 3\, e^{a_i} \cdot \max\bigl(1,\; 1/\alpha\bigr),
-$$ {#eq-pmf-K-rule}
-i.e.\ $K \geq 3\, e^{a_i}$ suffices once $\alpha \geq 1$, while $K \geq 3\, e^{a_i}/\alpha$ is recommended in the sub-exponential regime $\alpha < 1$. The implementation in §4 uses this rule.
+a one-dimensional integral parallel to the cost-orientation expression @eq-pmf-gamma-cost. The integrand is integrable at $u = 0^+$ for every $\alpha > 0$ and super-exponentially damped as $u \to \infty$, so adaptive quadrature returns the production PMF accurately across the full $(a_i, b, \alpha)$ grid. The implementation in §4 uses this quadrature path for both orientations; the alternating-series form @eq-pmf-gamma is retained only for its analytic role in deriving the exponential corollary below.
 
 ### The Exponential Corollary {#sec-pmf-exp}
 
