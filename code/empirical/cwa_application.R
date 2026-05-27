@@ -536,7 +536,7 @@ fit_M4 <- if (do_scaling && !is.null(fit_exp)) cached(CACHE_M4, quote({
   cat("  M4 Exp + scaling on Z ...\n")
   t0 <- proc.time()
   res <- fit_scaling(y, X, Z, dist = "exponential", fit_warm = fit_exp,
-                     orientation = "production")
+                     orientation = "cost")
   cat(sprintf("    elapsed: %.1f sec\n", (proc.time() - t0)["elapsed"]))
   res
 })) else NULL
@@ -545,7 +545,7 @@ fit_M5 <- if (do_gamma && do_scaling && !is.null(fit_M4)) cached(CACHE_M5, quote
   cat("  M5 Gamma + scaling on Z ...\n")
   t0 <- proc.time()
   res <- fit_scaling(y, X, Z, dist = "gamma", fit_warm = fit_gam,
-                     orientation = "production")
+                     orientation = "cost")
   cat(sprintf("    elapsed: %.1f sec\n", (proc.time() - t0)["elapsed"]))
   res
 })) else NULL

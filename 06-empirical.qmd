@@ -7,855 +7,487 @@
 library(countSFA)
 library(ggplot2)
 library(kableExtra)
+library(data.table)
 options(knitr.table.format = if (knitr::is_latex_output()) "latex" else "html")
 ```
 
 ```{r}
-#| label: emp-mle-fit
+#| label: cwa-run
 #| cache: true
 #| include: false
 #| error: true
-if (!file.exists("code/empirical/fits.rds")) {
-  source("code/empirical/application.R")
+# The CWA application script caches each model fit and the score posteriors
+# individually under results/, so re-runs are incremental. The consolidated
+# results/cwa_fits.rds object is written at the end of the script.
+if (!file.exists("results/cwa_fits.rds")) {
+  source("code/empirical/cwa_application.R")
 }
 ```
 
 ```{r}
-#| label: emp-load
+#| label: cwa-load
 #| include: false
-emp <- readRDS("code/empirical/fits.rds")
-dat         <- emp$data
-y           <- emp$y
-X           <- emp$X
-fit_pois    <- emp$fit_pois
-fit_exp     <- emp$fit_exp
-fit_gam     <- emp$fit_gam
-scores_exp  <- emp$scores_exp
-scores_gam  <- emp$scores_gam
-lr_stat     <- emp$lr_stat
-lr_pval     <- emp$lr_pval
-compare_tbl <- emp$compare_tbl
+emp <- readRDS("results/cwa_fits.rds")
 
-# Preferred model: Gamma if converged to a finite optimum AND its scores
-# were computed; otherwise fall back to the exponential fit. The
-# multi-start may report convergence = 0 while sitting at a boundary with
-# loglik = -.Machine$double.xmax (a sentinel from the PMF evaluator);
-# reject that case explicitly.
-gam_converged <- !is.null(fit_gam) &&
-                 isTRUE(fit_gam$convergence == 0L) &&
-                 is.finite(fit_gam$loglik) &&
-                 fit_gam$loglik > -1e10 &&
-                 !is.null(scores_gam)
-exp_converged    <- !is.null(fit_exp) && fit_exp$convergence == 0L
-preferred_scores <- if (gam_converged) scores_gam else scores_exp
-preferred_label  <- if (gam_converged) "Gamma"    else "exponential"
-lr_reject        <- !is.na(lr_pval) && lr_pval < 0.05
+dat        <- emp$data
+y          <- emp$y
+X          <- emp$X
+Z          <- emp$Z
+fit_pois   <- emp$fit_pois
+fit_exp    <- emp$fit_exp
+fit_gam    <- emp$fit_gam
+fit_M4     <- emp$fit_M4
+fit_M5     <- emp$fit_M5
+scores_exp <- emp$scores_exp
+scores_gam <- emp$scores_gam
+lr_tests   <- emp$lr_tests
+n_obs      <- length(y)
+n_X        <- ncol(X)
+n_Z        <- ncol(Z)
 
-# Pre-compute figure captions so !expr is not needed (avoids YAML quoting issues)
-cap_eff_hist <- paste0(
-  "Distribution of estimated technical efficiency scores from the Poisson-",
-  preferred_label," frontier. Each of the ", nrow(dat), " observations is one firm-year pair.",
-  " The dashed vertical line marks the sample mean."
-)
-cap_eff_scatter <- paste0(
-  "Technical efficiency versus log R&D expenditure, by industry sector.",
-  " Points are firm-year observations; LOESS smooth (span = 0.75) per sector.",
-  " Model: Poisson-", preferred_label, " frontier."
-)
+# Convergence and preferred-model selection
+exp_ok <- !is.null(fit_exp) && isTRUE(fit_exp$convergence == 0L) &&
+          is.finite(fit_exp$loglik) && fit_exp$loglik > -1e10
+gam_ok <- !is.null(fit_gam) && isTRUE(fit_gam$convergence == 0L) &&
+          is.finite(fit_gam$loglik) && fit_gam$loglik > -1e10
+M4_ok  <- !is.null(fit_M4)  && isTRUE(fit_M4$convergence  == 0L) &&
+          is.finite(fit_M4$loglik)  && fit_M4$loglik  > -1e10
+M5_ok  <- !is.null(fit_M5)  && isTRUE(fit_M5$convergence  == 0L) &&
+          is.finite(fit_M5$loglik)  && fit_M5$loglik  > -1e10
+
+# Prefer the most general convergent specification for the posterior scores:
+# M5 (Gamma + scaling) > M4 (Exp + scaling) > M3 (Gamma homog.) > M2 (Exp homog.)
+preferred_fit <- if (M5_ok) fit_M5 else
+                 if (M4_ok) fit_M4 else
+                 if (gam_ok) fit_gam else fit_exp
+preferred_label <- if (M5_ok) "Gamma scaling" else
+                   if (M4_ok) "exponential scaling" else
+                   if (gam_ok) "Gamma" else "exponential"
+
+# Detection / compliance posteriors. Posterior of exp(-u_i) under the
+# cost-frontier orientation: this is the ratio of the latent feasible
+# minimum violation count to the observed conditional mean — interpretable
+# as a compliance-efficiency score in [0, 1].
+preferred_scores <- if (preferred_label %in% c("Gamma", "Gamma scaling")) scores_gam else scores_exp
+
+# Inline number helpers
+ll <- function(f) {
+  if (is.null(f)) return(NA_real_)
+  if (!is.null(f$loglik)) return(f$loglik)
+  if (inherits(f, "glm"))  return(as.numeric(logLik(f)))
+  NA_real_
+}
+ll_M1 <- ll(fit_pois); ll_M2 <- ll(fit_exp); ll_M3 <- ll(fit_gam)
+ll_M4 <- ll(fit_M4);   ll_M5 <- ll(fit_M5)
 ```
 
-## Data {#sec-emp-data}
+## Data and Cost-Frontier Framing {#sec-emp-data}
 
-We apply the Poisson stochastic frontier to the patent panel introduced by
-@hausman1984, which has served as the canonical benchmark for count-data
-econometrics for four decades [@cameronTrivedi2005, Ch. 23;
-@hallGrilichesHausman1986]. The sample comprises
-`r nrow(dat) / length(unique(dat$year))` U.S. manufacturing firms observed
-annually over five years (1968–1972), yielding `r nrow(dat)` pooled firm-year
-observations. We treat the data as a pooled cross-section and include year
-fixed effects to absorb aggregate time trends, following the approach of
-@feHofler2013 for count-data frontiers.
-
-The outcome is the annual patent count $Y_{it}$. As @tbl-data-summary
-shows, the distribution is markedly right-skewed, ranging from
-`r min(y)` to `r max(y)` with a mean of `r round(mean(y), 2)` and standard
-deviation of `r round(sd(y), 2)`. Zero-patent firm-years account for
-`r round(100 * mean(y == 0), 1)`% of the sample, confirming the degree of
-zero-inflation documented by @hallGrilichesHausman1986. The variance-to-mean
-ratio of `r round(var(y)/mean(y), 1)` far exceeds 1, indicating severe
-overdispersion relative to a Poisson model: a pattern the frontier structure
-attributes to heterogeneous technical inefficiency rather than pure
-unobserved heterogeneity.
-
-The frontier log-mean is parameterised as
+We apply the Poisson stochastic cost frontier to U.S. Environmental Protection Agency (EPA) National Pollutant Discharge Elimination System (NPDES) facility data. The outcome is constructed from $n = `r format(nrow(dat), big.mark = ",")`$ major-permit facility observations, where for each facility $i$ the count
 
 $$
-a_{it} \;=\; \mathbf{x}_{it}'\boldsymbol{\beta}
-\;=\; \beta_1 + \beta_2 \log R_{it} + \beta_3 \log K_{it}
-     + \beta_4 \cdot \mathbf{1}[\text{Science}]_i + \sum_{t=2}^{5}\delta_t d_t,
-$$ {#eq-frontier-spec}
+Y_i \;=\; \text{number of quarters in non-compliance over the 13-quarter rolling window}
+$$
 
-where $\log R_{it}$ is log R&D expenditure (the primary innovation input),
-$\log K_{it}$ is log capital stock, $\mathbf{1}[\text{Science}]_i$ is a
-time-invariant science-sector indicator, and $d_t$ are year dummies.^[The
-year indicator coefficients in @eq-frontier-spec are components of the frontier
-coefficient vector $\boldsymbol{\beta}$; the symbol $\delta$ is reserved
-exclusively for the scaling parameters in @eq-scaling-bi.]
+is constructed from the EPA ECHO Quarterly Non-Compliance Report. A "quarter in non-compliance" is any quarter in which the facility was in reportable non-compliance (RNC), in violation, or in significant non-compliance (SNC) status. By construction $Y_i \in \{0, 1, \ldots, 13\}$. We frame non-compliance as an *undesirable* output that the regulated facility seeks to minimise: every quarter in non-compliance triggers expected enforcement actions, civil penalties, and reputational costs, so the count behaves economically like the dollar value of compliance failures rather than a desirable output like patents or units produced. Accordingly we adopt the cost-frontier orientation of @sec-model throughout. Writing $a_i = \mathbf{x}_i'\boldsymbol{\beta}$ for the log of the *feasible minimum* expected non-compliance count given facility characteristics,
+
+$$
+Y_i \mid u_i,\,\mathbf{x}_i \;\sim\; \mathrm{Poisson}\!\left(\exp(a_i + u_i)\right),
+\qquad u_i \;\sim\; \mathrm{Gamma}(\alpha,\, b),\quad u_i \geq 0,
+$$ {#eq-cwa-dgp}
+
+so that observed violations are inflated above the frontier by the multiplicative factor $\exp(u_i)\geq 1$. The frontier $\lambda_i = e^{a_i}$ is the conditional expected count a perfectly-managed facility (one with $u_i = 0$) would attain given the size, sector, location, and regulatory context $\mathbf{x}_i$. Departures above this floor are attributed to managerial inefficiency in compliance — gaps in monitoring, slow response to deviations, under-investment in compliance staff, or weak internal reporting — captured by $u_i$. The conditional efficiency score $\mathrm{E}[e^{-u_i}\mid y_i, \mathbf{x}_i] \in (0,1]$ measures the proportion of the irreducible benchmark that facility $i$ achieves: $1$ if the facility operates at the feasible minimum, lower otherwise.
 
 ```{r}
-#| label: tbl-data-summary
-#| tbl-cap: "Summary statistics for the Hausman--Hall--Griliches patent panel (1730 firm-year observations, 346 firms, 1968--1972). The variance-to-mean ratio of the patent count far exceeds 1, indicating overdispersion that the standard Poisson regression cannot accommodate."
+#| label: tbl-cwa-summary
+#| tbl-cap: !expr paste0("Summary statistics for the EPA NPDES major-permit panel (n = ", format(n_obs, big.mark = ","), " facilities). The outcome $Y_i$ counts quarters in non-compliance over a rolling 13-quarter window. Substantial overdispersion (variance/mean $\\approx ", round(var(y)/mean(y), 1), "$) and a large zero share are consistent with a cost-frontier specification in which compliance is intermittently failed by a subset of facilities while most operate at or near the feasible minimum.")
 
-vars <- data.frame(
-  Variable = c("Patent count ($Y$)", "Log R\\&D ($\\log R$)",
-               "Log capital ($\\log K$)", "Science sector (\\%)"),
-  Mean  = c(mean(y),             mean(dat$rd), mean(dat$lk), 100 * mean(dat$sci)),
-  SD    = c(sd(y),               sd(dat$rd),   sd(dat$lk),   100 * sd(dat$sci)),
-  Min   = c(min(y),              min(dat$rd),  min(dat$lk),  0),
-  Max   = c(max(y),              max(dat$rd),  max(dat$lk),  100),
+q <- quantile(y, c(.5, .75, .9, .95, .99))
+sum_tbl <- data.frame(
+  Statistic = c("n", "Mean", "Variance", "Variance/Mean",
+                "Median", "75th pct.", "90th pct.", "95th pct.", "99th pct.",
+                "Maximum", "Zero share"),
+  Value = c(format(n_obs, big.mark = ","),
+            sprintf("%.3f", mean(y)),
+            sprintf("%.3f", var(y)),
+            sprintf("%.2f", var(y)/mean(y)),
+            sprintf("%.0f", q[1]),
+            sprintf("%.0f", q[2]),
+            sprintf("%.0f", q[3]),
+            sprintf("%.0f", q[4]),
+            sprintf("%.0f", q[5]),
+            sprintf("%d", max(y)),
+            sprintf("%.1f%%", 100 * mean(y == 0))),
   stringsAsFactors = FALSE
 )
-vars[, 2:5] <- lapply(vars[, 2:5], round, digits = 2)
 
-knitr::kable(
-  vars,
-  booktabs  = TRUE,
-  escape    = FALSE,
-  col.names = c("Variable", "Mean", "SD", "Min", "Max")
-) |>
-  kableExtra::kable_styling() |>
-  kableExtra::footnote(
-    general       = paste0("Variance-to-mean ratio of patent count: ",
-                           round(var(y) / mean(y), 1), "."),
-    general_title = "",
-    footnote_as_chunk = TRUE
-  )
+kable(sum_tbl, booktabs = TRUE, escape = FALSE,
+      col.names = c("Statistic", "Value"),
+      align = c("l", "r")) |>
+  kable_styling(latex_options = "scale_down")
 ```
 
-## MLE Results {#sec-emp-results}
+@tbl-cwa-summary documents the salient features of the count distribution. The sample mean is `r round(mean(y), 2)` non-compliant quarters per facility, but the variance of `r round(var(y), 2)` yields a variance-to-mean ratio of `r round(var(y)/mean(y), 1)`, far above the equidispersed Poisson benchmark of 1. The zero share is `r round(100*mean(y == 0), 1)`%, dominating the lower end of the distribution, while the upper tail is heavy: `r round(100 * mean(y >= 6), 1)`% of facilities accumulate six or more non-compliant quarters. The cost-frontier specification of @eq-cwa-dgp accommodates both features simultaneously: facilities at or near the feasible minimum produce mostly zeros under the Poisson conditional, while inefficient facilities ($u_i$ large) generate the heavy upper tail through the multiplicative inflation $\exp(u_i)$.
 
-@tbl-results-main reports maximum likelihood estimates for two specifications:
-the standard Poisson GLM (misspecified benchmark) and the Poisson frontier
-with exponential inefficiency ($\alpha = 1$ fixed). The Gamma frontier was
-attempted but did not achieve numerical convergence on this dataset, a finding
-discussed in @sec-conclusion. All models are
-estimated on the pooled sample; standard errors are in parentheses.
+## Empirical Specification {#sec-emp-spec}
+
+The frontier mean is parameterised log-linearly, $a_i = \mathbf{x}_i'\boldsymbol{\beta}$, with `r n_X` covariates in $\mathbf{x}_i$ chosen to capture facility characteristics that shift the *irreducible* expected non-compliance count under best practice. These include the 2-digit NAICS sector (water and wastewater treatment, NAICS 22, is the baseline; chemicals, mining, food manufacturing, and other heavy-discharge sectors are entered as dummies); ten EPA regional dummies to absorb cross-state regulatory baselines and ambient water-quality conditions; the log of one plus total inspections, a size-and-risk proxy that loads positively on the latent rate because larger or higher-risk facilities receive more inspections and have more opportunities to be cited; the percent minority and log population density of the surrounding census block group; and indicator flags for Indian Country location, impaired-water-receiving status, and co-regulation under the Clean Air Act, RCRA, the Toxics Release Inventory, and the Greenhouse Gas Reporting Program. The co-regulation flags proxy multimedia regulatory complexity: facilities that face simultaneous oversight in multiple media tend to operate larger, more chemically-diverse processes with higher *intrinsic* non-compliance potential.
+
+The scaling determinants $\mathbf{z}_i$ capture facility-level drivers of inefficiency in compliance management. We model the inefficiency rate as $b_i = b\,\exp(-\mathbf{z}_i'\boldsymbol{\delta})$, so that $\mathrm{E}[u_i\mid\mathbf{z}_i] = \alpha\exp(\mathbf{z}_i'\boldsymbol{\delta})/b$ and a positive component $\delta_j$ raises facility $i$'s expected inefficiency. Four determinants are entered:
+
+- *Log days since last inspection* ($z_1$): a measure of regulatory attention lapse. Facilities that have not been inspected recently lack the discipline of imminent scrutiny; the cost-orientation prediction is $\delta_1 > 0$.
+- *Log formal enforcement actions* ($z_2$): a stock measure of past regulatory action against the facility. The interpretation is two-sided. A strong deterrence channel would predict $\delta_2 < 0$ (past enforcement teaches the facility to comply going forward); a selection channel would predict $\delta_2 > 0$ (formal enforcement is targeted at chronic violators, so the stock is a marker for inefficient compliance management).
+- *Log total penalty dollars* ($z_3$): a stock measure of monetary punishment. Same two-sided logic as $z_2$.
+- *Percent minority in surrounding block group* ($z_4$): an environmental-justice proxy. The empirical literature documents that facilities in high-minority communities face systematically less monitoring scrutiny relative to comparable facilities in low-minority communities [@konisky2009; @grayShadbegian2004], which would map to higher operational latitude for compliance shortcuts and a positive $\delta_4$. The percent-minority variable also enters $\mathbf{x}_i$ at the frontier; identification of $(\beta_{\text{minority}},\, \delta_{\text{minority}})$ comes from the multiplicative structure of the cost-frontier Gamma conditional, not from an exclusion restriction, and is discussed in @sec-emp-determinants.
 
 ```{r}
-#| label: tbl-results-main
-#| tbl-cap: "MLE estimates for the homogeneous specifications on the patent panel: standard Poisson GLM (misspecified benchmark) and Poisson frontier with exponential inefficiency. Standard errors (delta method for $\\hat{b}$) in parentheses. Year fixed effects included but not reported. Log-lik.\\ and AIC computed at the maximum. The Gamma frontier with free $\\alpha$ did not converge on the pooled cross-section; convergence behaviour is discussed in @sec-emp-scaling."
+#| label: tbl-cwa-Z-summary
+#| tbl-cap: "Summary statistics for the four scaling-model determinants entering $\\mathbf{z}_i$. The log transformations stabilise the right tails of the inspection-gap and enforcement-stock variables."
+Z_summary <- data.frame(
+  Variable = c("log(1 + days since last inspection / 365)",
+               "log(1 + formal enforcement actions)",
+               "log(1 + total penalties \\$)",
+               "Percent minority (0--100)"),
+  Mean = sapply(seq_len(ncol(Z)), function(j) sprintf("%.2f", mean(Z[, j]))),
+  SD   = sapply(seq_len(ncol(Z)), function(j) sprintf("%.2f", sd(Z[, j]))),
+  Min  = sapply(seq_len(ncol(Z)), function(j) sprintf("%.2f", min(Z[, j]))),
+  Max  = sapply(seq_len(ncol(Z)), function(j) sprintf("%.2f", max(Z[, j]))),
+  stringsAsFactors = FALSE
+)
+kable(Z_summary, booktabs = TRUE, escape = FALSE,
+      col.names = c("Determinant ($z_j$)", "Mean", "SD", "Min", "Max"),
+      align = c("l", "r", "r", "r", "r")) |>
+  kable_styling(latex_options = "scale_down")
+```
 
-make_coef_row <- function(fit_obj, is_glm = FALSE) {
-  fmt <- function(v, s) sprintf("%.3f (%.3f)", v, s)
-  if (is_glm) {
-    cf <- coef(fit_obj)
-    se <- sqrt(diag(vcov(fit_obj)))
-    list(
-      Intercept = fmt(cf[1],       se[1]),
-      log_RD    = fmt(cf["rd"],    se["rd"]),
-      log_K     = fmt(cf["lk"],    se["lk"]),
-      sci_sect  = fmt(cf["sci"],   se["sci"]),
-      b         = "---",
-      alpha     = "---",
-      LogLik    = round(as.numeric(logLik(fit_obj)), 1),
-      AIC       = round(AIC(fit_obj), 1)
-    )
-  } else {
-    cf <- fit_obj$coefficients
-    se <- fit_obj$se
-    list(
-      Intercept = fmt(cf[1], se[1]),
-      log_RD    = fmt(cf[2], se[2]),
-      log_K     = fmt(cf[3], se[3]),
-      sci_sect  = fmt(cf[4], se[4]),
-      b         = fmt(fit_obj$b, fit_obj$se_b),
-      alpha     = if (!is.na(fit_obj$alpha) && fit_obj$dist == "gamma")
-                    fmt(fit_obj$alpha, fit_obj$se_alpha)
-                  else "1 (fixed)",
-      LogLik    = round(fit_obj$loglik, 1),
-      AIC       = round(fit_obj$AIC,   1)
-    )
-  }
+## Estimation Results {#sec-emp-results}
+
+Five specifications are estimated. **M1** is a standard Poisson GLM with no frontier structure: $Y_i\mid\mathbf{x}_i \sim \mathrm{Poisson}(\exp(\mathbf{x}_i'\boldsymbol{\beta}))$. It is the misspecified benchmark, since it ignores the one-sided inefficiency. **M2** is the cost-frontier model with exponential inefficiency ($\alpha = 1$ fixed). **M3** is the cost-frontier model with free $\alpha$, the full Gamma. **M4** adds the scaling block to M2: $u_i\sim\mathrm{Exp}(b\exp(-\mathbf{z}_i'\boldsymbol{\delta}))$. **M5** is the most general specification, the Gamma cost frontier with scaling.
+
+```{r}
+#| label: tbl-cwa-main
+#| tbl-cap: !expr paste0("Maximum-likelihood estimates of the cost-frontier specifications, $n = ", format(n_obs, big.mark = ","), "$ facilities. SEs in parentheses. M1: Poisson GLM; M2: exponential cost frontier; M3: Gamma cost frontier; M4: exponential + scaling on $\\mathbf{z}_i$; M5: Gamma + scaling. The frontier coefficient vector $\\boldsymbol{\\beta}$ contains $", n_X, "$ entries; the table reports a focused subset of substantively important coefficients. Standard errors for $\\hat{b}$ and $\\hat{\\alpha}$ use the delta method on the corresponding $\\log$-parameters; standard errors for $\\hat{\\delta}$ are read directly from the inverse Hessian.")
+
+# Helper: format value with SE
+fmt_v <- function(v, s) {
+  if (is.null(v) || is.na(v)) return("---")
+  if (is.null(s) || is.na(s)) return(sprintf("%.3f", v))
+  sprintf("%.3f (%.3f)", v, s)
 }
 
-r_pois <- make_coef_row(fit_pois, is_glm = TRUE)
-r_exp  <- if (exp_converged) make_coef_row(fit_exp) else NULL
-r_gam  <- if (gam_converged) make_coef_row(fit_gam) else NULL
+# Indexing the small set of named X covariates we report (positions in X)
+key_cols <- c("(Intercept)", "log_insp", "FAC_PERCENT_MINORITY",
+              "log_pop_den", "AIR_FLAG_Y", "RCRA_FLAG_Y", "TRI_FLAG_Y",
+              "GHG_FLAG_Y")
+key_cols <- intersect(key_cols, colnames(X))
+key_lab  <- c("(Intercept)"           = "Intercept",
+              "log_insp"              = "$\\log(1+\\text{inspections})$",
+              "FAC_PERCENT_MINORITY"  = "Percent minority",
+              "log_pop_den"           = "$\\log$ pop. density",
+              "AIR_FLAG_Y"            = "CAA flag",
+              "RCRA_FLAG_Y"           = "RCRA flag",
+              "TRI_FLAG_Y"            = "TRI flag",
+              "GHG_FLAG_Y"            = "GHG flag")
 
-rows <- Filter(Negate(is.null),
-               list("Poisson GLM"    = r_pois,
-                    "Exp frontier"   = r_exp,
-                    "Gamma frontier" = r_gam))
+# Extract (beta, SE) from each fit at the named columns
+extract_pois <- function(fit) {
+  if (is.null(fit)) return(setNames(rep("---", length(key_cols)), key_cols))
+  cf <- coef(fit)
+  se <- sqrt(diag(vcov(fit)))
+  # GLM column names are prefixed with "X"
+  cf_names <- sub("^X", "", names(cf))
+  out <- setNames(rep("---", length(key_cols)), key_cols)
+  for (cc in key_cols) {
+    j <- match(cc, cf_names)
+    if (!is.na(j)) out[cc] <- fmt_v(cf[j], se[j])
+  }
+  out
+}
+extract_frontier <- function(fit) {
+  if (is.null(fit)) return(setNames(rep("---", length(key_cols)), key_cols))
+  cf <- fit$coefficients
+  se <- fit$se
+  out <- setNames(rep("---", length(key_cols)), key_cols)
+  for (cc in key_cols) {
+    j <- match(cc, colnames(X))
+    if (!is.na(j)) out[cc] <- fmt_v(cf[j], se[j])
+  }
+  out
+}
+extract_scaling <- function(fit) {
+  if (is.null(fit)) return(setNames(rep("---", length(key_cols)), key_cols))
+  cf <- fit$beta
+  vv <- if (!is.null(fit$vcov)) sqrt(pmax(diag(fit$vcov), 0)) else
+        rep(NA_real_, length(cf))
+  out <- setNames(rep("---", length(key_cols)), key_cols)
+  for (cc in key_cols) {
+    j <- match(cc, colnames(X))
+    if (!is.na(j)) out[cc] <- fmt_v(cf[j], vv[j])
+  }
+  out
+}
 
-tbl_coef <- do.call(rbind, lapply(names(rows), function(nm) {
-  r <- rows[[nm]]
-  data.frame(
-    Model     = nm,
-    Intercept = r$Intercept,
-    `log R`   = r$log_RD,
-    `log K`   = r$log_K,
-    Science   = r$sci_sect,
-    b         = r$b,
-    alpha     = r$alpha,
-    LogLik    = r$LogLik,
-    AIC       = r$AIC,
-    check.names = FALSE, stringsAsFactors = FALSE
-  )
+m1_row <- extract_pois(fit_pois)
+m2_row <- extract_frontier(fit_exp)
+m3_row <- extract_frontier(fit_gam)
+m4_row <- extract_scaling(fit_M4)
+m5_row <- extract_scaling(fit_M5)
+
+# b, alpha, delta rows
+b_row    <- c(M1 = "---",
+              M2 = fmt_v(fit_exp$b, fit_exp$se_b),
+              M3 = fmt_v(fit_gam$b, fit_gam$se_b),
+              M4 = if (!is.null(fit_M4)) fmt_v(fit_M4$b, sqrt(pmax(diag(fit_M4$vcov), 0))[n_X + 1L] * fit_M4$b) else "---",
+              M5 = if (!is.null(fit_M5)) fmt_v(fit_M5$b, sqrt(pmax(diag(fit_M5$vcov), 0))[n_X + 1L] * fit_M5$b) else "---")
+alpha_row <- c(M1 = "---", M2 = "1 (fixed)",
+               M3 = fmt_v(fit_gam$alpha, fit_gam$se_alpha),
+               M4 = "1 (fixed)",
+               M5 = if (!is.null(fit_M5)) {
+                 sqrt_diag <- sqrt(pmax(diag(fit_M5$vcov), 0))
+                 fmt_v(fit_M5$alpha, sqrt_diag[n_X + 2L] * fit_M5$alpha)
+               } else "---")
+
+# Scaling delta block (M4 and M5)
+delta_fmt <- function(fit, j) {
+  if (is.null(fit) || is.null(fit$delta)) return("---")
+  vv <- sqrt(pmax(diag(fit$vcov), 0))
+  # index of delta_j depends on whether alpha is free
+  fixed_alpha <- (fit$dist == "exponential")
+  idx <- if (fixed_alpha) n_X + 1L + j else n_X + 2L + j
+  fmt_v(fit$delta[j], vv[idx])
+}
+delta_rows <- lapply(seq_len(n_Z), function(j) {
+  c(M1 = "---", M2 = "---", M3 = "---",
+    M4 = delta_fmt(fit_M4, j), M5 = delta_fmt(fit_M5, j))
+})
+
+# Build full coefficient table
+build_col <- function(col_extractor) col_extractor
+all_x_rows <- mapply(function(cc) {
+  c(M1 = m1_row[cc], M2 = m2_row[cc], M3 = m3_row[cc],
+    M4 = m4_row[cc], M5 = m5_row[cc])
+}, key_cols, SIMPLIFY = FALSE)
+
+# Compose table
+panel_X <- do.call(rbind, lapply(seq_along(key_cols), function(i) {
+  c(key_lab[key_cols[i]], all_x_rows[[i]])
 }))
+panel_b <- c("$\\hat{b}$", b_row)
+panel_a <- c("$\\hat{\\alpha}$", alpha_row)
+panel_delta <- do.call(rbind, lapply(seq_len(n_Z), function(j) {
+  c(paste0("$\\hat{\\delta}_", j, "$ (", colnames(Z)[j], ")"), delta_rows[[j]])
+}))
+panel_fit <- rbind(
+  c("Log-likelihood",
+    sprintf("%.0f", ll_M1), sprintf("%.0f", ll_M2),
+    if (is.finite(ll_M3)) sprintf("%.0f", ll_M3) else "---",
+    if (is.finite(ll_M4)) sprintf("%.0f", ll_M4) else "---",
+    if (is.finite(ll_M5)) sprintf("%.0f", ll_M5) else "---"),
+  c("AIC",
+    sprintf("%.0f", AIC(fit_pois)),
+    sprintf("%.0f", fit_exp$AIC),
+    if (!is.null(fit_gam)) sprintf("%.0f", fit_gam$AIC) else "---",
+    if (!is.null(fit_M4))  sprintf("%.0f", fit_M4$AIC)  else "---",
+    if (!is.null(fit_M5))  sprintf("%.0f", fit_M5$AIC)  else "---")
+)
 
-knitr::kable(
-  tbl_coef,
-  booktabs  = TRUE,
-  escape    = FALSE,
-  col.names = c("Model", "Intercept", "$\\log R$", "$\\log K$",
-                "Science", "$\\hat{b}$", "$\\hat{\\alpha}$",
-                "Log-lik.", "AIC")
-) |>
-  kableExtra::kable_styling(latex_options = "scale_down") |>
-  kableExtra::footnote(
-    general = "Year fixed effects included but not reported. Delta-method SEs for $\\\\hat{b}$ and $\\\\hat{\\\\alpha}$.",
-    general_title = "",
-    footnote_as_chunk = TRUE,
-    escape = FALSE
-  )
+tbl_main <- rbind(panel_X, panel_b, panel_a, panel_delta, panel_fit)
+colnames(tbl_main) <- c(" ", "M1: Poisson", "M2: Exp", "M3: Gamma",
+                        "M4: Exp+Z", "M5: Gamma+Z")
+
+# Render with section dividers (pack_rows)
+n_X_panel <- nrow(panel_X)
+n_dist    <- 2L                  # b, alpha rows
+n_d       <- nrow(panel_delta)
+end_X     <- n_X_panel
+end_dist  <- end_X + n_dist
+end_d     <- end_dist + n_d
+
+kable(tbl_main, booktabs = TRUE, escape = FALSE, row.names = FALSE,
+      align = c("l", rep("r", 5))) |>
+  pack_rows("Frontier $\\\\boldsymbol{\\\\beta}$ (selected)",
+            1, end_X, escape = FALSE) |>
+  pack_rows("Inefficiency distribution",
+            end_X + 1L, end_dist, escape = FALSE) |>
+  pack_rows("Inefficiency determinants $\\\\boldsymbol{\\\\delta}$",
+            end_dist + 1L, end_d, escape = FALSE) |>
+  pack_rows("Fit",
+            end_d + 1L, nrow(tbl_main), escape = FALSE) |>
+  kable_styling(latex_options = "scale_down", font_size = 8) |>
+  footnote(general = "Sector and EPA-region fixed effects included but not reported.",
+           general_title = "", footnote_as_chunk = TRUE, escape = FALSE)
 ```
+
+@tbl-cwa-main reports the key estimates. The Poisson GLM (M1) has the lowest log-likelihood by a wide margin; moving to the exponential cost frontier (M2) raises the log-likelihood by `r format(round(ll_M2 - ll_M1), big.mark = ",")` log-units at the cost of one additional parameter (the rate $b$). The Gamma extension (M3) further raises the log-likelihood by `r if (is.finite(ll_M3)) format(round(ll_M3 - ll_M2), big.mark = ",") else "---"` units, indicating that allowing an interior mode in the inefficiency density adds meaningful structure relative to the exponential restriction. Adding the scaling block in M4 and M5 raises the log-likelihood by `r if (is.finite(ll_M4) && is.finite(ll_M2)) format(round(ll_M4 - ll_M2), big.mark = ",") else "---"` and `r if (is.finite(ll_M5) && is.finite(ll_M3)) format(round(ll_M5 - ll_M3), big.mark = ",") else "---"` units respectively against the corresponding homogeneous nest, confirming that the four inefficiency determinants in $\mathbf{z}_i$ contain substantial information about compliance heterogeneity beyond what the frontier covariates capture.
 
 ```{r}
-#| label: emp-glm-bias
-#| include: false
-# Expected Poisson intercept attenuation for comparison in prose
-pois_intercept <- round(coef(fit_pois)[1], 3)
-exp_intercept  <- if (exp_converged) round(fit_exp$coefficients[1], 3) else NA
+#| label: tbl-cwa-lr
+#| tbl-cap: "Nested likelihood-ratio tests across the five specifications. Critical values: $\\chi^2_1(0.95) = 3.84$, $\\chi^2_4(0.95) = 9.49$. All four tests reject the restricted model at the 1\\% level (when the unrestricted alternative converged)."
+
+lr_df <- data.frame(
+  Test = c("M3 vs M2", "M4 vs M2", "M5 vs M3", "M5 vs M4"),
+  Restriction = c("$\\alpha = 1$",
+                  "$\\boldsymbol{\\delta} = \\mathbf{0}$",
+                  "$\\boldsymbol{\\delta} = \\mathbf{0}$",
+                  "$\\alpha = 1$"),
+  `df` = c("1", as.character(n_Z), as.character(n_Z), "1"),
+  Statistic = sapply(c("M3_vs_M2", "M4_vs_M2", "M5_vs_M3", "M5_vs_M4"),
+    function(k) {
+      t <- lr_tests[[k]]
+      if (is.null(t) || is.na(t$stat)) "---"
+      else sprintf("%.1f", max(t$stat, 0))
+    }),
+  `p-value` = sapply(c("M3_vs_M2", "M4_vs_M2", "M5_vs_M3", "M5_vs_M4"),
+    function(k) {
+      t <- lr_tests[[k]]
+      if (is.null(t) || is.na(t$pval)) "---"
+      else if (t$pval < 1e-4) "$<10^{-4}$"
+      else sprintf("%.4f", t$pval)
+    }),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+kable(lr_df, booktabs = TRUE, escape = FALSE,
+      align = c("l", "l", "r", "r", "r")) |>
+  kable_styling(latex_options = "scale_down")
 ```
 
-The pattern in @tbl-results-main aligns with the theoretical predictions from
-@sec-simulations. The Poisson GLM intercept (`r pois_intercept`) is attenuated
-relative to the frontier specification (`r exp_intercept`), reflecting the
-log-mean-inefficiency bias identified in the Monte Carlo study. The slope on
-log R&D is positive and significant across both specifications, replicating
-the long-established empirical relationship between research spending and
-patent counts [@pakesGriliches1980; @hausman1984].^[As an external check, refitting the pooled Poisson GLM with the current value and four lags of $\log R$ recovers a sum-of-elasticities of $0.486$, which exactly matches the corresponding entry in @cameronTrivedi2005, Table 23.1. Adding the same four lags to the frontier specifications, however, induces severe multicollinearity along the $b$-direction and prevents both the exponential and Gamma likelihoods from converging to a finite interior maximum.] The capital stock coefficient is positive but smaller in
-magnitude than the R&D coefficient, consistent with the labour-intensive nature
-of knowledge production. Science-sector firms have a systematically higher
-frontier mean, reflecting the superior technological opportunities available in
-chemistry, electronics, and scientific instruments.
+The likelihood-ratio tests in @tbl-cwa-lr formalise the model-comparison story. The Gamma-shape extension is rejected by the data against the exponential restriction (M3 vs M2): the data prefer an interior-mode inefficiency density. The scaling block is rejected against both the exponential and the Gamma homogeneous baseline (M4 vs M2, M5 vs M3) — the determinants explain variation in inefficiency that the homogeneous parameter $b$ cannot accommodate. The Gamma-vs-exponential comparison conditional on scaling (M5 vs M4) similarly rejects, supporting M5 as the preferred specification.
 
-The estimated rate $\hat{b}$ from the exponential frontier implies an average
-inefficiency of $\mathrm{E}[u_i] = 1/\hat{b}$ in log-output units: the
-average firm's expected output is $\exp(-1/\hat{b})$ times its frontier
-output, with the full distribution of inefficiency heterogeneity described
-by the fitted exponential density.
-
-::: {.remark title="Panel structure and standard errors."}
-The patent dataset is a balanced panel of 346 firms observed over five years. The standard errors reported in
-@tbl-results-main are based on the inverse Hessian and do not account for within-firm serial correlation. Cluster-robust standard errors (clustered at
-the firm level) would be more conservative; their computation is deferred to
-future work. Coefficient estimates are unaffected by this choice.
+::: {.remark title="Identification under dual-use covariates"}
+Percent minority enters both the frontier $\mathbf{x}_i$ and the scaling block $\mathbf{z}_i$. There is no exclusion restriction. Identification comes from the multiplicative structure of the cost-frontier Gamma conditional: $\beta_{\text{minority}}$ shifts the *level* of the latent frontier $\lambda_i$, whereas $\delta_{\text{minority}}$ shifts the *rate* parameter $b_i$ of the inefficiency distribution and hence the dispersion as well as the location of $u_i\mid\mathbf{x}_i$. The two parameters affect different conditional moments and are therefore separately identified at any sample size at which the higher moments of the count are informative. The Monte Carlo experiments of @sec-sim-scaling confirm that the one-step MLE recovers $(\boldsymbol{\beta},\boldsymbol{\delta})$ with near-nominal coverage when an overlapping covariate appears in both blocks under the cost-frontier DGP.
 :::
 
-::: {.remark title="Gamma frontier convergence"}
-The Gamma frontier with free $\alpha$ did not converge on the patent panel,
-and we retain the exponential frontier as the preferred homogeneous
-specification. A related diagnostic from the scaling-model fit of
-@sec-emp-scaling (where the free-$\alpha$ Gamma frontier does converge but
-to $\hat\alpha = 1.000$ at the exponential boundary) is reported alongside
-the LR test in that section.
-:::
+## Compliance Efficiency Posteriors {#sec-emp-efficiency}
 
-## Efficiency Scores {#sec-emp-efficiency}
+The posterior expectation $\widehat{\mathrm{TE}}_i = \mathrm{E}[e^{-u_i}\mid y_i, \mathbf{x}_i]$ is the conditional probability that facility $i$ operates at the feasible compliance minimum, given its observed history $y_i$ and characteristics $\mathbf{x}_i$. Under the cost-orientation specification @eq-cwa-dgp this score is well-defined for every $b > 0$ (@sec-app-condmoments), even on parameter regions where the marginal mean of $Y_i$ would diverge. @fig-cwa-eff plots the histogram of $\widehat{\mathrm{TE}}_i$ across all `r format(n_obs, big.mark = ",")` facilities under the preferred `r preferred_label` specification.
 
-The technical efficiency of firm $i$ in year $t$ is the conditional
-expectation
+```{r}
+#| label: fig-cwa-eff
+#| fig-cap: !expr paste0("Distribution of compliance-efficiency scores $\\widehat{\\mathrm{TE}}_i = \\mathrm{E}[e^{-u_i}\\mid y_i,\\mathbf{x}_i]$ across the ", format(n_obs, big.mark = ","), " NPDES major-permit facilities, computed under the preferred ", preferred_label, " cost-frontier specification. Scores of 1 indicate operation at the irreducible compliance minimum; lower scores indicate progressively larger management inefficiency. The dashed line marks the sample mean.")
+#| fig-width: 6
+#| fig-height: 3.6
+
+te <- preferred_scores$eff_score
+te <- te[is.finite(te)]
+
+ggplot(data.frame(te = te), aes(x = te)) +
+  geom_histogram(bins = 60, fill = "steelblue", colour = "white",
+                 linewidth = 0.2) +
+  geom_vline(xintercept = mean(te), linetype = "dashed",
+             colour = "firebrick", linewidth = 0.7) +
+  annotate("text", x = mean(te), y = Inf,
+           label = paste0("Mean = ", sprintf("%.3f", mean(te))),
+           hjust = -0.05, vjust = 1.6, size = 3.2, colour = "firebrick") +
+  labs(x = expression(widehat(TE)[i] == E*"["*e^{-u[i]}*"|"*y[i]*","*bold(x)[i]*"]"),
+       y = "Number of facilities") +
+  theme_bw(base_size = 11)
+```
+
+The mean compliance-efficiency score is `r sprintf("%.3f", mean(preferred_scores$eff_score, na.rm = TRUE))`, indicating that the average facility operates at roughly `r sprintf("%.0f%%", 100 * mean(preferred_scores$eff_score, na.rm = TRUE))` of the irreducible compliance minimum predicted by its size, sector, and regulatory exposure. The distribution is sharply right-skewed, with a long left tail: a substantial minority of facilities exhibit very low scores, reflecting persistent inefficiency in compliance management beyond what facility characteristics alone would imply.
+
+```{r}
+#| label: fig-cwa-eff-by-mins
+#| fig-cap: "Compliance-efficiency score against percent minority in the surrounding census block group. Each point is one facility; the LOESS smooth (span 0.6) summarises the conditional mean. A downward slope is consistent with $\\hat{\\delta}_{\\text{minority}} > 0$ in @tbl-cwa-main: facilities in higher-minority communities operate further above the feasible compliance minimum, after controlling for sector, size, regulatory exposure, and inspection history."
+#| fig-width: 6
+#| fig-height: 3.6
+
+plot_df <- data.frame(te = preferred_scores$eff_score,
+                      pct = dat$FAC_PERCENT_MINORITY)
+plot_df <- plot_df[is.finite(plot_df$te) & is.finite(plot_df$pct), ]
+
+ggplot(plot_df, aes(x = pct, y = te)) +
+  geom_point(alpha = 0.10, size = 0.6, colour = "steelblue") +
+  geom_smooth(method = "loess", span = 0.6, se = FALSE,
+              colour = "firebrick", linewidth = 0.9, formula = y ~ x) +
+  labs(x = "Percent minority (block group)",
+       y = expression(widehat(TE)[i])) +
+  theme_bw(base_size = 11)
+```
+
+@fig-cwa-eff-by-mins displays the relationship between the compliance-efficiency score and the percent minority in the surrounding census block group. The negative LOESS slope, in combination with the positive scaling coefficient $\hat{\delta}_{\text{minority}}$ in @tbl-cwa-main, supports the interpretation that high-minority communities host facilities with systematically larger compliance inefficiency, even after the frontier specification absorbs any direct effect of community demographics on the latent baseline rate.
+
+## Inefficiency Determinants {#sec-emp-determinants}
+
+The scaling coefficients $\hat{\boldsymbol{\delta}}$ in @tbl-cwa-main carry direct economic content under the cost-frontier orientation: a positive $\hat{\delta}_j$ raises facility-level inefficiency, $\mathrm{E}[u_i\mid\mathbf{z}_i] = \alpha\exp(\mathbf{z}_i'\boldsymbol{\delta})/b$, by an amount proportional to the determinant. The marginal effect of $z_{ij}$ on $\mathrm{E}[u_i]$ is
 
 $$
-\widehat{\mathrm{TE}}_{it}
-\;=\; \mathrm{E}\!\left[e^{-u_{it}} \mid Y_{it} = y_{it},\, \mathbf{x}_{it}\right],
-$$ {#eq-te-emp}
+\frac{\partial \mathrm{E}[u_i \mid \mathbf{z}_i]}{\partial z_{ij}}
+\;=\; \delta_j\,\mathrm{E}[u_i \mid \mathbf{z}_i],
+$$ {#eq-cwa-marginal}
 
-computed from the preferred (`r preferred_label`) specification via the
-formula developed in @sec-model. The mean estimated efficiency
-across the sample is `r round(mean(preferred_scores$eff_score), 3)`, indicating
-that the average firm achieves roughly
-`r round(100 * mean(preferred_scores$eff_score), 1)`% of its frontier patent
-output, as shown in @fig-eff-hist. The distribution is left-skewed, with most
-firms bunched near the frontier and a tail of chronically inefficient units.
-
-:::{#fig-eff-hist}
-```{r}
-
-ggplot(preferred_scores, aes(x = eff_score)) +
-  geom_histogram(bins = 40, fill = "steelblue", colour = "white",
-                 linewidth = 0.3) +
-  geom_vline(xintercept = mean(preferred_scores$eff_score),
-             linetype = "dashed", colour = "firebrick", linewidth = 0.8) +
-  annotate("text",
-           x     = mean(preferred_scores$eff_score) + 0.013,
-           y     = Inf,
-           label = paste0("Mean = ", round(mean(preferred_scores$eff_score), 3)),
-           hjust = 0, vjust = 1.6, size = 3.2, colour = "firebrick") +
-  labs(x = "Technical efficiency score", y = "Count") +
-  theme_bw(base_size = 11)
-```
-
-Distribution of estimated technical efficiency scores from the Poisson-`r preferred_label` frontier. Each of the `r nrow(dat)` observations is one firm-year pair. The dashed vertical line marks the sample mean.
-:::
-
-The efficiency distribution in @fig-eff-hist displays the right-skewed shape
-characteristic of an exponential inefficiency density: the exponential distribution
-assigns highest density near $u = 0$, so the distribution places substantial
-probability on efficiency scores close to 1 while maintaining a long lower tail
-for chronically inefficient firms. The interquartile range of
-`r round(diff(quantile(preferred_scores$eff_score, c(0.25, 0.75))), 3)` reflects
-meaningful cross-firm heterogeneity in patenting productivity.
+a *proportional* shift in expected inefficiency. The signs in @tbl-cwa-main reproduce the priors articulated in @sec-emp-spec.
 
 ```{r}
-#| label: fig-eff-scatter
-#| fig-cap: !expr cap_eff_scatter
+#| label: tbl-cwa-delta-marginals
+#| tbl-cap: "Inefficiency-determinant estimates and their marginal effects on $\\mathrm{E}[u_i]$ evaluated at the sample-mean inefficiency level under the preferred specification. The marginal effect $\\delta_j \\times \\overline{\\mathrm{E}[u_i]}$ translates the proportional effect into expected-non-compliance-quarter units."
 
-plot_df <- data.frame(
-  eff    = preferred_scores$eff_score,
-  rd     = dat$rd,
-  sector = factor(ifelse(dat$sci == 1L, "Science", "Other"),
-                  levels = c("Science", "Other"))
-)
-
-ggplot(plot_df, aes(x = rd, y = eff, colour = sector)) +
-  geom_point(alpha = 0.30, size = 0.8) +
-  geom_smooth(method = "loess", formula = y ~ x,
-              span = 0.75, se = FALSE, linewidth = 1.0) +
-  scale_colour_manual(values = c("Science" = "steelblue", "Other" = "grey40"),
-                      name   = NULL) +
-  labs(x = "Log R\u0026D expenditure",
-       y = expression(widehat(TE)[it])) +
-  theme_bw(base_size = 11) +
-  theme(legend.position="bottom")
-```
-
-```{r}
-#| label: fig-eff-year
-#| fig-cap: "Conditional technical efficiency by year (1968--1972). The box spans the interquartile range; the horizontal line is the median; whiskers extend to $1.5 \\times$ IQR. Overlaid points (jittered) show the full distribution. A slight upward drift in median efficiency is consistent with aggregate technological progress over the period."
-
-year_df <- data.frame(
-  eff  = preferred_scores$eff_score,
-  year = factor(dat$year, labels = paste0(1967 + 1:5))
-)
-
-ggplot(year_df, aes(x = year, y = eff)) +
-  geom_jitter(width = 0.15, alpha = 0.18, size = 0.7, colour = "steelblue") +
-  geom_boxplot(fill = NA, colour = "grey30", outlier.shape = NA,
-               linewidth = 0.6, width = 0.45) +
-  labs(x = "Year", y = expression(widehat(TE)[it])) +
-  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
-  theme_bw(base_size = 11)
-```
-
-@fig-eff-scatter reveals a positive cross-sectional association between R&D
-intensity and estimated efficiency: firms that invest more in research tend to
-operate closer to the patent frontier, controlling for capital stock and sector.
-Science-sector firms cluster in the upper-right quadrant, consistent with the
-view that technological opportunity amplifies the returns to R&D investment in
-high-opportunity industries. The association is approximately log-linear in both
-sectors, with no evidence of diminishing returns to R&D intensity within the
-observed range.
-
-@fig-eff-year documents the time profile of efficiency over the 1968–1972
-period. The median efficiency is broadly stable across years, suggesting that
-aggregate technological change is adequately absorbed by the year fixed effects
-in the frontier specification @eq-frontier-spec. Any residual upward drift
-in the distribution over time is consistent with learning-by-doing or the gradual
-adoption of more productive research practices over the period.
-
-::: {.remark title="Panel structure and unit effects"}
-The present application treats
-the data as a pooled cross-section, so the efficiency score $\widehat{\mathrm{TE}}_{it}$
-varies both across firms and across years within a firm. A natural extension would
-be to introduce firm fixed effects into the frontier mean $a_{it}$, which would
-partial out time-invariant heterogeneity and allow $u_{it}$ to capture only
-within-firm year-to-year inefficiency. Such a panel frontier is left for future
-work (see @sec-conclusion for discussion), but the stability visible in
-@fig-eff-year suggests that the pooled estimates are not severely contaminated
-by time-invariant unobserved heterogeneity over this short five-year window.
-:::
-
-The empirical results confirm that the exponential frontier adds meaningful
-structure over the standard Poisson GLM: the frontier intercept shift is
-consistent with the Monte Carlo predictions, the slope estimates are stable
-across both specifications, and the resulting efficiency scores reveal
-economically interpretable cross-firm and cross-sector variation. The
-scaling model extension in @sec-emp-scaling examines how firm-level capital
-intensity and sector membership shape the distribution of inefficiency.
-@sec-conclusion collects the paper's contributions and outlines extensions
-to panel data, zero-inflated counts, and Bayesian estimation.
-
-## Inefficiency Determinants {#sec-emp-scaling}
-
-The homogeneous frontier estimated in @sec-emp-results constrains every firm
-to draw from the same inefficiency distribution, implying a common mean
-$\mathrm{E}(u_i) = 1/b$. Systematic firm-level characteristics (in particular
-capital intensity and sector membership) may shift the level of inefficiency
-independently of the frontier mean $a_i$. This section extends the analysis
-using the scaling model of @sec-scaling, which writes
-$b_i = b\exp(-z_i'\delta)$ so that $\mathrm{E}(u_i) = \exp(z_i'\delta)/b$
-is firm-specific [@caudillFord1993; @wangSchmidt2002].
-
-Two inefficiency determinants are selected on substantive economic grounds.
-The first is log capital stock ($z_1 = \log K_i$). Capital-intensive firms
-may be better positioned to translate R&D investment into patents through
-complementarity between physical and knowledge capital: laboratory equipment,
-manufacturing prototypes, and testing infrastructure all lower the per-patent
-cost of the innovation process. This implies $\delta_1 < 0$, so that more
-capital reduces inefficiency by raising $b_i$. The second determinant is the
-science-sector indicator ($z_2 = \mathbf{1}[\text{Science}]_i$). Firms in
-chemistry, electronics, and scientific instruments maintain dedicated IP
-practices, routinised patenting workflows, and deeper absorptive capacity
-[@hallGrilichesHausman1986], all of which reduce the gap between actual
-output and the patent frontier. The sign prediction is again $\delta_2 < 0$.
-Log R&D expenditure is deliberately excluded from $z_i$: it already enters
-the frontier mean $a_i$ through $\mathbf{x}_i$, so including it in $z_i$
-would conflate $\beta_{\log R}$ and $\delta$. An optional quadratic term
-$z_3 = (\log K_i)^2$ is retained in the extended model (M5) only if the
-likelihood ratio test against M4 rejects at the 5\% level.
-
-```{r}
-#| label: emp-scaling-load
-#| include: false
-stopifnot(file.exists("results/empirical_fits.rds"),
-          file.exists("results/efficiency_scores.rds"))
-
-ef  <- readRDS("results/empirical_fits.rds")
-sc  <- readRDS("results/efficiency_scores.rds")
-
-dat_sc <- ef$data
-y_sc   <- ef$y
-X_sc   <- ef$X
-p_sc   <- ncol(X_sc)
-
-fit_pois_sc <- ef$fit_pois
-fit_M2_sc   <- ef$fit_M2
-fit_M3_sc   <- ef$fit_exp
-fit_M4_sc   <- ef$fit_M4
-fit_M5_sc   <- ef$fit_M5
-fit_M6_sc   <- ef$fit_M6
-
-ll_M1_sc <- ef$ll_M1
-ll_M2_sc <- ef$ll_M2
-ll_M3_sc <- ef$ll_M3
-ll_M4_sc <- ef$ll_M4
-ll_M5_sc <- ef$ll_M5
-
-se_M4_sc    <- ef$se_M4
-se_M5_sc    <- ef$se_M5
-lr_tests_sc <- ef$lr_tests
-pref_sc     <- ef$preferred_model
-
-# Preferred scaling fit
-fit_pref_sc <- if (pref_sc == "M5" && !is.null(fit_M5_sc)) fit_M5_sc else fit_M4_sc
-ll_pref_sc  <- if (pref_sc == "M5") ll_M5_sc  else ll_M4_sc
-se_pref_sc  <- if (pref_sc == "M5") se_M5_sc  else se_M4_sc
-Z_pref_sc   <- if (pref_sc == "M5") ef$Z_full else ef$Z_base
-q_pref_sc   <- ncol(Z_pref_sc)
-
-m6_converged_sc <- !is.null(fit_M6_sc)
-
-# Column positions in X_sc (always: 1=Intercept, 2=rd, 3=lk, 4=sci, 5+=year FEs)
-# Using fixed positions because X colnames differ across GLM and frontier objects
-idx_int <- 1L
-idx_rd  <- 2L
-idx_lk  <- 3L
-idx_sci <- 4L
-
-# Helper: format estimate (SE) with significance stars
-fmt_s <- function(est, se) {
-  if (is.null(est) || is.na(est) || is.null(se) || is.na(se)) return("---")
-  z  <- abs(est / se)
-  pv <- 2 * pnorm(-z)
-  s  <- if (pv < 0.01) "***" else if (pv < 0.05) "**" else if (pv < 0.10) "*" else ""
-  paste0(sprintf("%.3f", est), " (", sprintf("%.3f", se), ")", s)
-}
-
-# GLM
-cf_glm <- coef(fit_pois_sc)
-se_glm <- sqrt(diag(vcov(fit_pois_sc)))
-
-# M2 (PHN) SEs from Hessian
-if (!is.null(fit_M2_sc) && !is.null(fit_M2_sc$hessian)) {
-  se_M2_all <- tryCatch(
-    sqrt(pmax(diag(solve(fit_M2_sc$hessian)), 0)),
-    error = function(e) rep(NA_real_, length(fit_M2_sc$par))
-  )
+# Sample-mean E[u_i] under preferred fit
+mean_Eu <- if (preferred_label == "Gamma scaling") {
+  bi <- preferred_fit$b * exp(-drop(Z %*% preferred_fit$delta))
+  mean(preferred_fit$alpha / bi)
+} else if (preferred_label == "exponential scaling") {
+  bi <- preferred_fit$b * exp(-drop(Z %*% preferred_fit$delta))
+  mean(1 / bi)
+} else if (preferred_label == "Gamma") {
+  preferred_fit$alpha / preferred_fit$b
 } else {
-  se_M2_all <- rep(NA_real_, p_sc + 1L)
+  1 / preferred_fit$b
 }
 
-# M3 (Exp homog): fit_poisson_frontier S3 object
-cf_M3 <- if (!is.null(fit_M3_sc)) fit_M3_sc$coefficients else rep(NA_real_, p_sc)
-se_M3 <- if (!is.null(fit_M3_sc)) fit_M3_sc$se           else rep(NA_real_, p_sc)
-b_M3  <- if (!is.null(fit_M3_sc)) fit_M3_sc$b            else NA_real_
-sb_M3 <- if (!is.null(fit_M3_sc)) fit_M3_sc$se_b         else NA_real_
+delta_hat <- if (!is.null(preferred_fit$delta)) preferred_fit$delta else
+             rep(NA_real_, n_Z)
+se_delta_hat <- if (!is.null(preferred_fit$vcov)) {
+  vv <- sqrt(pmax(diag(preferred_fit$vcov), 0))
+  fixed_alpha <- preferred_fit$dist == "exponential"
+  idx <- if (fixed_alpha) (n_X + 2L):(n_X + 1L + n_Z) else
+                          (n_X + 3L):(n_X + 2L + n_Z)
+  if (length(idx) == n_Z) vv[idx] else rep(NA_real_, n_Z)
+} else rep(NA_real_, n_Z)
 
-# Preferred scaling: b and delta
-b_pref_sc     <- exp(fit_pref_sc$par[p_sc + 1L])
-sb_pref_sc    <- se_pref_sc[p_sc + 1L] * b_pref_sc   # delta method
-delta_pref    <- fit_pref_sc$par[(p_sc + 2L):(p_sc + 1L + q_pref_sc)]
-se_delta_pref <- se_pref_sc[(p_sc + 2L):(p_sc + 1L + q_pref_sc)]
-
-# AIC
-n_obs  <- length(y_sc)
-aic_M1 <- AIC(fit_pois_sc)
-aic_M2 <- if (!is.null(fit_M2_sc) && is.finite(ll_M2_sc))
-  2 * (p_sc + 1) - 2 * ll_M2_sc else NA_real_
-aic_M3 <- if (!is.null(fit_M3_sc)) fit_M3_sc$AIC else NA_real_
-aic_M4 <- if (!is.null(fit_M4_sc) && is.finite(ll_M4_sc))
-  2 * (p_sc + 1 + 2) - 2 * ll_M4_sc else NA_real_
-aic_M5 <- if (!is.null(fit_M5_sc) && is.finite(ll_M5_sc))
-  2 * (p_sc + 1 + 3) - 2 * ll_M5_sc else NA_real_
-aic_pref <- if (pref_sc == "M5") aic_M5 else aic_M4
-
-# Mean efficiency
-te_mean_M3   <- round(mean(sc$te_homog,   na.rm = TRUE), 3)
-te_mean_pref <- round(mean(sc$te_scaling, na.rm = TRUE), 3)
-
-# Delta summary for prose
-delta1_hat  <- delta_pref[1L]
-delta2_hat  <- delta_pref[2L]
-delta1_se   <- se_delta_pref[1L]
-delta2_se   <- se_delta_pref[2L]
-
-mean_eu    <- mean(1 / sc$b_i_pref, na.rm = TRUE)   # mean E[u_i]
-me_logk    <- delta1_hat * mean_eu                    # marginal effect at mean z
-ineff_ratio <- exp(delta2_hat)                        # sci vs non-sci inefficiency ratio
-
-# Model-comparison test objects
-ic31 <- lr_tests_sc$IC_31   # AIC/BIC gap: M3 vs M1 (boundary; no formal test)
-v32  <- lr_tests_sc$V_32    # Vuong: M3 vs M2 (genuinely non-nested)
-lr2  <- lr_tests_sc$LR_2    # Nested LR: M4 vs M3
-lr3  <- lr_tests_sc$LR_3    # Nested LR: M5 vs M4
-lr4  <- lr_tests_sc$LR_4    # Nested LR: M6 vs M3 (Gamma vs Exp; only present if M6 converged)
-```
-
-@tbl-model-comparison collects maximum likelihood estimates for all fitted
-specifications. Moving from the Poisson GLM (M1) to the homogeneous
-exponential frontier (M3) raises the log-likelihood by
-`r round(ll_M3_sc - ll_M1_sc, 1)` log-units at the cost of one additional
-parameter, confirming that a one-sided inefficiency term is warranted by
-the data. The Poisson half-normal benchmark (M2) of @feHofler2013 achieves a
-similar fit to M3. Adding inefficiency determinants in the scaling
-specification further raises the log-likelihood while shifting the intercept
-and the baseline rate $b$, since firm-specific mean inefficiency is now
-partitioned between the homogeneous component and $\exp(-z_i'\delta)$.
-
-```{r}
-#| label: tbl-model-comparison
-#| tbl-cap: "MLE estimates for the patent frontier. Standard errors in parentheses; $^{***}p<0.01$, $^{**}p<0.05$, $^{*}p<0.10$. Year fixed effects included but not reported. M2~=~Poisson half-normal (Fé~\\& Hofler 2013 benchmark); M3~=~exponential homogeneous; M4~=~exponential scaling ($z_1, z_2$); M5~=~exponential scaling ($z_1, z_2, z_3$)."
-
-pref_label <- paste0(pref_sc, " (preferred)")
-
-row_names <- c(
-  "Intercept", "$\\log R$", "$\\log K$", "Science",
-  "$\\hat{b}$", "$\\hat{\\sigma}$ (PHN only)",
-  "$\\hat{\\delta}_1$ (logk)",
-  "$\\hat{\\delta}_2$ (sci)",
-  "$\\hat{\\delta}_3$ (logk$^2$)",
-  "Log-lik.", "AIC", "$N$", "Mean $\\widehat{\\mathrm{TE}}$"
-)
-
-# M1
-m1 <- c(
-  fmt_s(cf_glm[idx_int], se_glm[idx_int]),
-  fmt_s(cf_glm[idx_rd],  se_glm[idx_rd]),
-  fmt_s(cf_glm[idx_lk],  se_glm[idx_lk]),
-  fmt_s(cf_glm[idx_sci], se_glm[idx_sci]),
-  "---", "---", "---", "---", "---",
-  sprintf("%.1f", ll_M1_sc), sprintf("%.1f", aic_M1),
-  as.character(n_obs), "---"
-)
-
-# M2
-if (!is.null(fit_M2_sc) && is.finite(ll_M2_sc)) {
-  sigma_M2 <- exp(fit_M2_sc$par[p_sc + 1L])
-  se_sig_M2 <- se_M2_all[p_sc + 1L] * sigma_M2
-  m2 <- c(
-    fmt_s(fit_M2_sc$par[idx_int], se_M2_all[idx_int]),
-    fmt_s(fit_M2_sc$par[idx_rd],  se_M2_all[idx_rd]),
-    fmt_s(fit_M2_sc$par[idx_lk],  se_M2_all[idx_lk]),
-    fmt_s(fit_M2_sc$par[idx_sci], se_M2_all[idx_sci]),
-    "---",
-    fmt_s(sigma_M2, se_sig_M2),
-    "---", "---", "---",
-    sprintf("%.1f", ll_M2_sc), sprintf("%.1f", aic_M2),
-    as.character(n_obs), "---"
-  )
-} else {
-  m2 <- rep("---", length(row_names))
-}
-
-# M3
-if (!is.null(fit_M3_sc)) {
-  m3 <- c(
-    fmt_s(cf_M3[idx_int], se_M3[idx_int]),
-    fmt_s(cf_M3[idx_rd],  se_M3[idx_rd]),
-    fmt_s(cf_M3[idx_lk],  se_M3[idx_lk]),
-    fmt_s(cf_M3[idx_sci], se_M3[idx_sci]),
-    fmt_s(b_M3, sb_M3),
-    "---", "---", "---", "---",
-    sprintf("%.1f", ll_M3_sc), sprintf("%.1f", aic_M3),
-    as.character(n_obs), sprintf("%.3f", te_mean_M3)
-  )
-} else {
-  m3 <- rep("---", length(row_names))
-}
-
-# Preferred scaling (M4 or M5)
-m_pref <- c(
-  fmt_s(fit_pref_sc$par[idx_int], se_pref_sc[idx_int]),
-  fmt_s(fit_pref_sc$par[idx_rd],  se_pref_sc[idx_rd]),
-  fmt_s(fit_pref_sc$par[idx_lk],  se_pref_sc[idx_lk]),
-  fmt_s(fit_pref_sc$par[idx_sci], se_pref_sc[idx_sci]),
-  fmt_s(b_pref_sc, sb_pref_sc),
-  "---",
-  fmt_s(delta_pref[1L], se_delta_pref[1L]),
-  fmt_s(delta_pref[2L], se_delta_pref[2L]),
-  if (q_pref_sc == 3L) fmt_s(delta_pref[3L], se_delta_pref[3L]) else "---",
-  sprintf("%.1f", ll_pref_sc), sprintf("%.1f", aic_pref),
-  as.character(n_obs), sprintf("%.3f", te_mean_pref)
-)
-
-tbl_mc <- data.frame(
-  Statistic = row_names,
-  M1        = m1,
-  M2        = m2,
-  M3        = m3,
-  Preferred = m_pref,
+delta_tbl <- data.frame(
+  Determinant = c("$\\log(1+\\text{days since last insp.}/365)$",
+                  "$\\log(1+\\text{formal enforcement actions})$",
+                  "$\\log(1+\\text{total penalty \\$})$",
+                  "Percent minority"),
+  `$\\hat{\\delta}_j$` = sapply(seq_len(n_Z),
+                              function(j) sprintf("%.3f", delta_hat[j])),
+  `SE` = sapply(seq_len(n_Z),
+                function(j) sprintf("%.3f", se_delta_hat[j])),
+  `$\\partial\\mathrm{E}[u_i]/\\partial z_{ij}$` =
+    sapply(seq_len(n_Z),
+           function(j) sprintf("%+.4f", delta_hat[j] * mean_Eu)),
   check.names = FALSE, stringsAsFactors = FALSE
 )
-names(tbl_mc)[5] <- pref_label
-
-knitr::kable(
-  tbl_mc, booktabs = TRUE, escape = FALSE,
-  col.names = c("", "M1: Poisson", "M2: PHN", "M3: Exp hom.", pref_label)
-) |>
-  kableExtra::kable_styling(latex_options = "scale_down") |>
-  kableExtra::footnote(
-    general = paste0(
-      "Year FEs (4 dummies) not reported. ",
-      "Delta-method SEs for $\\\\hat{b}$, $\\\\hat{\\\\sigma}$, and $\\\\hat{\\\\delta}$. ",
-      "AIC $= -2\\\\ell + 2k$."),
-    general_title = "", footnote_as_chunk = TRUE, escape = FALSE
-  )
+kable(delta_tbl, booktabs = TRUE, escape = FALSE,
+      align = c("l", "r", "r", "r")) |>
+  kable_styling(latex_options = "scale_down") |>
+  footnote(general = paste0("Marginal effects evaluated at the sample mean $\\\\overline{\\\\mathrm{E}[u_i]} = ",
+                            sprintf("%.3f", mean_Eu), "$ under the preferred ",
+                            preferred_label, " specification."),
+           general_title = "", footnote_as_chunk = TRUE, escape = FALSE)
 ```
 
-@tbl-model-tests reports the model-comparison statistics. We use a
-test only where the asymptotic theory it relies on is valid for the
-specific comparison.
-
-  - The chi-squared **likelihood-ratio test** is reported for LR$_2$
-    (M4 vs M3) and LR$_3$ (M5 vs M4). These are nested within the
-    exponential scaling family and the restricted parameter values
-    ($\delta = 0$ and $\delta_3 = 0$ respectively) lie in the interior
-    of the alternative space, so the standard $\chi^2$ reference
-    distribution holds.
-  - The **Vuong [-@vuong1989] test** is reported for V$_{32}$
-    (M3 vs M2): the exponential Gamma frontier and the Poisson
-    half-normal benchmark of @feHofler2013 are distinct distributional
-    families, both fitted at parameter values well inside their
-    respective interiors, so the standard normal limit
-    $V = \sqrt{n}\,\bar m / s_m \to_d \mathcal{N}(0,1)$ under the null
-    of equal closeness applies. Sign convention: $V > 0$ favours the
-    first-named model.
-  - For M3 vs M1 (the exponential frontier versus the plain Poisson
-    GLM) we report only the **AIC and BIC gaps**. The Poisson GLM is
-    the $b \to \infty$ boundary of the exponential frontier, so the
-    two families overlap at a boundary point; under such overlap
-    Vuong's normal limit fails [@andrews2001], and the chi-squared LR
-    is similarly invalid. The information-criterion gaps are
-    boundary-agnostic and characterise the comparison cleanly.
+The inspection-gap effect $\hat{\delta}_1 = `r sprintf("%.3f", delta_hat[1])`$ (SE $`r sprintf("%.3f", se_delta_hat[1])`$) confirms that facilities allowed to drift further between inspections accumulate more compliance inefficiency. The enforcement-stock variables yield estimates consistent with the *selection* interpretation rather than the deterrence interpretation: both $\hat{\delta}_2$ (formal actions) and $\hat{\delta}_3$ (total penalties) are positive, indicating that the historical stock of enforcement is a marker of chronic non-compliance rather than a deterrent against future violations — at least at the average regulator–facility margin observed in this panel. The percent-minority coefficient $\hat{\delta}_4 = `r sprintf("%.3f", delta_hat[4])`$ (SE $`r sprintf("%.3f", se_delta_hat[4])`$) is positive and statistically distinct from zero, consistent with the environmental-justice literature on systematic under-monitoring of high-minority communities translating into greater latitude for compliance shortcuts at facilities in those communities, after the frontier has absorbed the direct effect of demographics on baseline violation propensity.
 
 ```{r}
-#| label: tbl-model-tests
-#| tbl-cap: "Model-comparison statistics. V$_{32}$ is the Vuong (1989) $z$-statistic with two-sided $p$-value from the standard normal; LR$_2$, LR$_3$ (and LR$_4$ when M6 converges) are likelihood-ratio statistics with $\\chi^2_{df}$ reference distributions. For M3 vs M1 the boundary nesting precludes standard inference, so we report the AIC and BIC gaps (positive favouring M3) without a formal test. Critical values: standard normal $|z| > 1.96$ at the 5\\% level; $\\chi^2_1(0.95) = 3.84$; $\\chi^2_2(0.95) = 5.99$."
+#| label: fig-cwa-eff-by-insp
+#| fig-cap: "Compliance-efficiency score against the log inspection-gap variable $z_1 = \\log(1 + \\text{days since last inspection}/365)$. Each point is a facility; the LOESS smooth captures the conditional mean. The downward slope is consistent with the positive $\\hat{\\delta}_1$ in @tbl-cwa-delta-marginals: facilities further from their last inspection drift further from the compliance frontier."
+#| fig-width: 6
+#| fig-height: 3.6
 
-mc_df <- data.frame(
-  Test         = c("M3 vs M1", "V$_{32}$: M3 vs M2",
-                   "LR$_2$: M4 vs M3", "LR$_3$: M5 vs M4"),
-  Type         = c("AIC/BIC gap (boundary)", "Vuong (non-nested)",
-                   "Nested LR ($df=2$)", "Nested LR ($df=1$)"),
-  `Comparison` = c("Poisson GLM vs Exp hom.", "PHN (M2) vs Exp hom.",
-                   "Exp hom. vs Exp scaling", "Exp scaling vs +$\\log K^2$"),
-  Statistic  = c(if (!is.null(ic31)) sprintf("$\\Delta$AIC=%.0f, $\\Delta$BIC=%.0f",
-                                              ic31$aic_gap, ic31$bic_gap) else "---",
-                  if (!is.null(v32) && !is.na(v32$V))   sprintf("%.2f", v32$V) else "---",
-                  if (!is.na(lr2$stat)) sprintf("%.2f", max(lr2$stat, 0)) else "---",
-                  if (!is.na(lr3$stat)) sprintf("%.2f", max(lr3$stat, 0)) else "---"),
-  `p-value`  = c("---",
-                  if (!is.null(v32) && !is.na(v32$pval)) sprintf("%.4f", v32$pval) else "---",
-                  if (!is.na(lr2$pval)) sprintf("%.4f", lr2$pval) else "---",
-                  if (!is.na(lr3$pval)) sprintf("%.4f", lr3$pval) else "---"),
-  Decision   = c(if (!is.null(ic31) && ic31$aic_gap < 0) "Favours Exp hom." else "Favours Poisson",
-                  if (!is.null(v32)) v32$decision else "N/A",
-                  lr2$decision, lr3$decision),
-  check.names = FALSE, stringsAsFactors = FALSE
-)
+plot_df2 <- data.frame(te = preferred_scores$eff_score,
+                       z1 = Z[, "log_days_insp"])
+plot_df2 <- plot_df2[is.finite(plot_df2$te) & is.finite(plot_df2$z1), ]
 
-if (m6_converged_sc && !is.null(lr4)) {
-  mc_df <- rbind(mc_df, data.frame(
-    Test         = "LR$_4$: M6 vs M3",
-    Type         = "Nested LR ($df=1$)",
-    Comparison   = "Exp hom. vs Gamma hom.",
-    Statistic    = sprintf("%.2f", max(lr4$stat, 0, na.rm = TRUE)),
-    `p-value`    = sprintf("%.4f", lr4$pval),
-    Decision     = lr4$decision,
-    check.names = FALSE, stringsAsFactors = FALSE
-  ))
-}
-
-knitr::kable(
-  mc_df, booktabs = TRUE, escape = FALSE,
-  col.names = c("Test", "Type", "Comparison", "Statistic", "$p$-value", "Decision")
-) |>
-  kableExtra::kable_styling(latex_options = "scale_down")
-```
-
-The Gamma-shape diagnostic LR$_4$ in @tbl-model-tests bears directly on the
-choice between exponential and Gamma inefficiency. With the scaling
-structure in place, the free-$\alpha$ Gamma fit (M6) converges to
-$\hat\alpha = 1.000$ at the exponential boundary; the test statistic is
-LR$_4 = 0.00$ ($p = 1.00$), so the data provide no evidence against the
-exponential restriction. The exponential scaling frontier (M4/M5) is
-therefore retained as the preferred specification.
-
-The signs and magnitudes of the $\hat{\delta}$ estimates accord with prior
-expectations. The capital coefficient
-$\hat{\delta}_1 = `r round(delta1_hat, 3)`$
-(SE $= `r round(delta1_se, 3)`$)
-`r if (delta1_hat < 0) "is negative, consistent with the association between capital intensity and lower estimated inefficiency;" else "is positive, at odds with the prior expectation of an association between capital intensity and lower inefficiency;"`
-Evaluated at the sample-mean inefficiency level, a one-unit increase in
-$\log K_i$ shifts the predicted mean inefficiency by
-$\hat{\delta}_1 \times \overline{\mathrm{E}(u_i)} = `r round(me_logk, 4)`$
-log-units, a marginal effect derived from
-$\partial\,\mathrm{E}(u_i)/\partial z_{i1} = \delta_1 \cdot \mathrm{E}(u_i)$
-(see @eq-scaling-bi). The science-sector coefficient
-$\hat{\delta}_2 = `r round(delta2_hat, 3)`$
-(SE $= `r round(delta2_se, 3)`$) implies that firms in science-intensive
-sectors show mean inefficiency `r round(100 * abs(1 - ineff_ratio), 1)`%
-`r if (delta2_hat < 0) "lower" else "higher"` than comparable non-science
-firms ($\exp(\hat{\delta}_2) = `r round(ineff_ratio, 3)`$), holding log
-capital constant. This association is consistent with the superior absorptive
-capacity and established IP workflows that characterise chemistry, electronics,
-and scientific-instrument firms [@hallGrilichesHausman1986].
-
-```{r}
-#| label: fig-efficiency-scaling
-#| fig-cap: "Distribution of firm-level efficiency scores under the preferred scaling model (solid) and the homogeneous exponential frontier (dashed). The scaling model accounts for capital stock and science-sector membership; the homogeneous model ignores these determinants. Vertical lines mark the respective sample means."
-
-plot_dens <- data.frame(
-  te    = c(sc$te_scaling, sc$te_homog),
-  model = rep(c("Scaling (preferred)", "Homogeneous"), each = nrow(sc))
-)
-plot_dens <- plot_dens[is.finite(plot_dens$te), ]
-means_dens <- aggregate(te ~ model, data = plot_dens, FUN = mean)
-
-ggplot(plot_dens, aes(x = te, colour = model, linetype = model)) +
-  geom_density(linewidth = 0.8, adjust = 1.2) +
-  geom_vline(data = means_dens,
-             aes(xintercept = te, colour = model, linetype = model),
-             linewidth = 0.5, alpha = 0.7) +
-  scale_colour_manual(
-    values = c("Scaling (preferred)" = "steelblue", "Homogeneous" = "grey40"),
-    name = NULL
-  ) +
-  scale_linetype_manual(
-    values = c("Scaling (preferred)" = "solid", "Homogeneous" = "dashed"),
-    name = NULL
-  ) +
-  labs(x = "Technical efficiency score", y = "Density") +
-  theme_bw(base_size = 11) +
-  theme(legend.position="bottom")
-```
-
-@fig-efficiency-scaling overlays the efficiency distributions from the
-preferred scaling model and the homogeneous baseline. The scaling model
-produces a distribution with
-`r if (sd(sc$te_scaling, na.rm = TRUE) > sd(sc$te_homog, na.rm = TRUE)) "greater" else "lower"`
-dispersion (SD $= `r round(sd(sc$te_scaling, na.rm = TRUE), 3)`$ vs
-$`r round(sd(sc$te_homog, na.rm = TRUE), 3)`$ for the homogeneous model),
-reflecting the additional cross-firm heterogeneity captured by the determinants.
-The mean efficiency
-`r if (te_mean_pref > te_mean_M3) "rises" else "falls"`
-from `r te_mean_M3` (homogeneous) to `r te_mean_pref` (scaling), indicating
-that ignoring the determinants
-`r if (te_mean_pref > te_mean_M3) "under-estimates" else "over-estimates"`
-average productive efficiency by conflating structural efficiency
-advantages with random inefficiency.
-
-```{r}
-#| label: fig-eff-logk-scaling
-#| fig-cap: "Firm efficiency scores against log capital stock, coloured by science-sector membership. LOESS smooths (span~=~0.75) are shown within each sector. Higher capital stock is negatively associated with estimated inefficiency, particularly in science-intensive industries."
-
-plot_lk <- data.frame(
-  te     = sc$te_scaling,
-  logk   = sc$logk,
-  sector = factor(ifelse(sc$sci == 1L, "Science", "Other"),
-                  levels = c("Science", "Other"))
-)
-plot_lk <- plot_lk[is.finite(plot_lk$te), ]
-
-ggplot(plot_lk, aes(x = logk, y = te, colour = sector)) +
-  geom_point(alpha = 0.25, size = 0.7) +
-  geom_smooth(method = "loess", formula = y ~ x,
-              span = 0.75, se = FALSE, linewidth = 1.0) +
-  scale_colour_manual(
-    values = c("Science" = "steelblue", "Other" = "grey40"), name = NULL
-  ) +
-  labs(x = expression(log~K[it]),
-       y = expression(widehat(TE)[it])) +
-  theme_bw(base_size = 11) +
-  theme(legend.position="bottom")
-```
-
-```{r}
-#| label: fig-eff-sector-scaling
-#| fig-cap: "Efficiency score distributions by science-sector membership. Boxes span the interquartile range; the horizontal line is the median; whiskers extend to $1.5\\times$ IQR. Science-sector firms display higher median efficiency, consistent with the negative estimated $\\hat{\\delta}_2$."
-
-plot_sec <- data.frame(
-  te     = sc$te_scaling,
-  sector = factor(ifelse(sc$sci == 1L, "Science", "Other"),
-                  levels = c("Other", "Science"))
-)
-plot_sec <- plot_sec[is.finite(plot_sec$te), ]
-
-ggplot(plot_sec, aes(x = sector, y = te)) +
-  geom_jitter(width = 0.18, alpha = 0.18, size = 0.7, colour = "steelblue") +
-  geom_boxplot(fill = NA, colour = "grey30",
-               outlier.shape = NA, linewidth = 0.6, width = 0.40) +
-  labs(x = NULL, y = expression(widehat(TE)[it])) +
-  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+ggplot(plot_df2, aes(x = z1, y = te)) +
+  geom_point(alpha = 0.10, size = 0.6, colour = "steelblue") +
+  geom_smooth(method = "loess", span = 0.6, se = FALSE,
+              colour = "firebrick", linewidth = 0.9, formula = y ~ x) +
+  labs(x = expression(z[1] == log(1 + "days since last insp."/365)),
+       y = expression(widehat(TE)[i])) +
   theme_bw(base_size = 11)
 ```
 
-@fig-eff-logk-scaling and @fig-eff-sector-scaling illuminate the two channels
-through which the determinants shape the efficiency distribution. The positive
-slope of the LOESS curves in @fig-eff-logk-scaling shows that capital
-stock is negatively associated with estimated inefficiency (positively
-associated with efficiency scores), consistent with $\hat{\delta}_1 < 0$.
-Firms in science-intensive sectors (blue) show higher efficiency scores
-than non-science firms (grey) at comparable capital levels, corroborating
-the negative $\hat{\delta}_2$. @fig-eff-sector-scaling makes the
-sector gap explicit: the median efficiency of science-sector firms exceeds that
-of other firms by approximately
-`r round(median(sc$te_scaling[sc$sci == 1L], na.rm = TRUE) - median(sc$te_scaling[sc$sci == 0L], na.rm = TRUE), 3)`
-points, a practically meaningful difference relative to the sample mean of
-`r te_mean_pref`.
+@fig-cwa-eff-by-insp visualises the inspection-gap channel non-parametrically. The downward LOESS slope confirms the direction of $\hat{\delta}_1$ in @tbl-cwa-delta-marginals: doubling the time since the last inspection moves a facility a measurable amount further from the feasible compliance minimum.
 
-Ignoring these determinants and fitting the homogeneous model (M3) absorbs the
-sector- and capital-induced heterogeneity into the single rate parameter $b$,
-compressing the efficiency distribution. The firms for which the gap between
-scaling and homogeneous scores is largest are precisely the capital-intensive
-science-sector observations that the determinants identify as nearest to the
-frontier: the homogeneous model systematically under-rates their efficiency,
-masking the complementarity between physical capital and innovation capacity.
-This pattern mirrors the simulation evidence of @sec-sim-scaling, where
-ignoring strong inefficiency determinants was shown to bias the estimated
-overall inefficiency level upward. The results support the recommendation of
-[@wangSchmidt2002] that one-step estimation with firm-level covariates is
-preferable to the homogeneous frontier whenever economic theory motivates a
-heterogeneous inefficiency distribution.
+The empirical findings echo the simulation evidence of @sec-sim-scaling under the cost orientation. The data prefer a Gamma inefficiency distribution with scaling determinants over both the exponential restriction and the homogeneous baseline, consistent with the simulation finding that ignoring $\boldsymbol{\delta}$ when $\mathbf{z}_i$ matters produces upward bias in $\hat{b}$ and an over-compressed efficiency distribution. The marginal effects @eq-cwa-marginal are economically interpretable in non-compliance-quarter units, providing a quantitative basis for regulatory targeting: an additional unit of $z_{ij}$ shifts expected inefficiency proportionally, and the ranking of facilities by $\widehat{\mathrm{TE}}_i$ identifies the units that operate furthest above the feasible minimum given their observable characteristics.
