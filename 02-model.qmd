@@ -16,7 +16,7 @@ Y_i \mid u_i,\, \mathbf{x}_i \;\sim\;
 \qquad u_i \geq 0,
 $$ {#eq-conditional}
 
-where the upper sign defines the *production frontier*, where $\lambda_i$ is an upper bound on the conditional mean, and the lower sign defines the *cost frontier*, where $\lambda_i$ is a lower bound. Throughout, $\boldsymbol{\beta}$ is the frontier parameter vector, $u_i \geq 0$ is the technical inefficiency, and the triples $(Y_i, u_i, \mathbf{x}_i)$ are independent across units. We write
+where the upper sign defines the production frontier, where $\lambda_i$ is an upper bound on the conditional mean, and the lower sign defines the cost frontier, where $\lambda_i$ is a lower bound. Throughout, $\boldsymbol{\beta}$ is the frontier parameter vector, $u_i \geq 0$ is the technical inefficiency, and the triples $(Y_i, u_i, \mathbf{x}_i)$ are independent across units. We write
 
 $$
 a_i \;\equiv\; a(\mathbf{x}_i;\,\boldsymbol{\beta})
@@ -25,7 +25,7 @@ $$ {#eq-loglink}
 
 for the log-frontier mean. The closed-form derivations that follow require only that $\lambda(\mathbf{x}_i;\,\boldsymbol{\beta})$ be positive, and they make no use of any specific functional form. For estimation, simulation, and the empirical application we adopt the canonical log-linear specification $\lambda(\mathbf{x}_i;\,\boldsymbol{\beta}) = \exp(\mathbf{x}_i'\boldsymbol{\beta})$, under which $a_i = \mathbf{x}_i'\boldsymbol{\beta}$. Nonlinear or semiparametric forms are admissible at no cost to the marginal PMF or to the conditional efficiency score.
 
-The specification follows the count-data frontier of @feHofler2013. In either orientation, however, their half-normal inefficiency leaves the marginal PMF as a one-dimensional integral that the package evaluates by maximum simulated likelihood with Halton sequences. The Gamma family adopted below yields a closed-form alternating series in the production case and a one-dimensional integral with a uniformly damped integrand in the cost case, permitting exact likelihood evaluation without simulation.
+The specification follows the count-data frontier of @feHofler2013. In either orientation, however, their half-normal inefficiency leaves the marginal PMF as a one-dimensional integral that the package evaluates by maximum simulated likelihood with Halton sequences. We show that the Gamma family adopted below yields a closed-form alternating series in the production case and a one-dimensional integral with an integrand that converges faster then exponentially in the cost case, and can be solved using quadrature. In the special exponential case, we show that the likelihood can be written in closed form in either direction using the incomplete upper and lower gamma function. 
 
 ## Inefficiency Distribution
 
@@ -44,7 +44,7 @@ $$
 \mathrm{Var}[u_i] \;=\; \frac{\alpha}{b^2}.
 $$ {#eq-gamma-moments}
 
-The shape parameter $\alpha$ governs the *form* of the inefficiency distribution independently of its scale. When $\alpha < 1$ the density is decreasing on $[0, \infty)$ with mode at zero. When $\alpha = 1$ it is exactly exponential, and we recover a count-data analogue of that classical specification of @meeusenBroeck1977. When $\alpha > 1$ the density is hump-shaped with an interior mode at $(\alpha - 1)/b > 0$, implying that very small inefficiency is no more likely than some positive reference level. The latter case is economically important: in sectors where all producers face an irreducible level of inefficiency, e.g., regulatory compliance costs, adjustment lags, or organisational slack, a distribution with an interior mode more accurately reflects the data-generating process. The rate $b$ is a scale parameter: large $b$ concentrates inefficiency near zero so that nearly all units approach the frontier; small $b$ implies widespread and severe inefficiency.
+The shape parameter $\alpha$ governs the form of the inefficiency distribution independently of its scale. When $\alpha < 1$ the density is decreasing on $[0, \infty)$ with mode at zero. When $\alpha = 1$ it is exactly exponential, and we recover a count-data analogue of that classical specification of @meeusenBroeck1977. When $\alpha > 1$ the density is hump-shaped with an interior mode at $(\alpha - 1)/b > 0$, implying that very small inefficiency is no more likely than some positive reference level. The latter case is economically important: in sectors where all producers face an irreducible level of inefficiency, e.g., regulatory compliance costs, adjustment lags, or organisational slack, a distribution with an interior mode more accurately reflects the data-generating process. The rate $b$ is a scale parameter: large $b$ concentrates inefficiency near zero so that nearly all units approach the frontier; small $b$ implies widespread and severe inefficiency.
 
 ## Marginal PMF
 

@@ -206,6 +206,20 @@ fit_poisson_frontier <- function(y, X, dist = "exponential",
   beta_lower <- beta0 - beta0_box
   beta_upper <- beta0 + beta0_box
 
+  # Analytic gradient (closed-form score via posterior-moment quadrature),
+  # available for both orientations. Supplied to L-BFGS-B whenever the PMF is
+  # evaluated by quadrature (alpha != 1); the exponential (alpha == 1) PMF is
+  # closed-form and fast, so it keeps optim's numerical gradient. Returns NULL
+  # in that case (optim then differences fn). Can be disabled globally via
+  # options(countSFA.analytic_grad = FALSE).
+  make_gr <- function(alpha_arg) {
+    if (!isTRUE(getOption("countSFA.analytic_grad", TRUE))) return(NULL)
+    if (!is.null(alpha_arg) && abs(alpha_arg - 1) < 1e-10) return(NULL)
+    function(p) grad_loglik_poisson_frontier(p, y, X, alpha = alpha_arg,
+                                             K = K, orientation = orientation,
+                                             Z = Z)
+  }
+
   if (fixed_alpha) {
     par0 <- if (!is.null(starts)) starts else c(beta_start, log(b0), delta0)
     obj  <- function(p) log_lik_poisson_frontier(p, y, X, alpha = alpha_val,
@@ -217,7 +231,8 @@ fit_poisson_frontier <- function(y, X, dist = "exponential",
     # beta_pois +- 5 (m5 + beta-bound for series-truncation safety).
     lower_bd <- c(beta_lower, -8, delta_lower)
     upper_bd <- c(beta_upper,  8, delta_upper)
-    opt <- optim(par0, obj, method = "L-BFGS-B",
+    gr_fun <- make_gr(alpha_val)
+    opt <- optim(par0, obj, gr = gr_fun, method = "L-BFGS-B",
                  lower = lower_bd, upper = upper_bd, hessian = TRUE,
                  control = list(maxit = 2000, factr = 1e7))
 
@@ -286,12 +301,13 @@ fit_poisson_frontier <- function(y, X, dist = "exponential",
       la_mom <- log(alpha0_warm)
       if (min(abs(starts_grid - la_mom)) > 0.1) starts_grid <- c(starts_grid, la_mom)
     }
+    gr_fun <- make_gr(NULL)
     opt <- list(value = Inf, convergence = 99L)
     for (log_alpha_start in starts_grid) {
       log_b_try <- log_b_warm + log_alpha_start
       par_try   <- c(par0[seq_len(k)], log_b_try, log_alpha_start, delta_warm)
       opt_try <- tryCatch(
-        optim(par_try, obj, method = "L-BFGS-B",
+        optim(par_try, obj, gr = gr_fun, method = "L-BFGS-B",
               lower = lower_bd, upper = upper_bd,
               hessian = TRUE,
               control = list(maxit = 2000, factr = 1e7)),

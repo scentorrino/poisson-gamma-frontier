@@ -1,7 +1,7 @@
 Package: countSFA
 Type: Package
 Title: Count-Data Stochastic Frontier Models
-Version: 0.5.0
+Version: 0.6.0
 Authors@R: person("Samuele", "Centorrino",
                   email = "scentorrino@proton.me",
                   role = c("aut", "cre"))

@@ -41,7 +41,8 @@
 # Output (saved to results/cwa_fits.rds):
 #   $data, $X, $y, $Z
 #   $fit_pois, $fit_exp, $fit_gam, $fit_M4, $fit_M5
-#   $scores_exp, $scores_gam       (detection-rate posteriors)
+#   $scores_exp, $scores_gam       (homogeneous detection-rate posteriors)
+#   $scores_M4, $scores_M5         (scaling detection-rate posteriors, b_i)
 #   $lr_tests
 #
 # Per-model caches in results/cwa_fit_<name>.rds so re-runs are incremental.
@@ -81,6 +82,8 @@ CACHE_M4   <- file.path(RES_DIR, "cwa_fit_M4.rds")
 CACHE_M5   <- file.path(RES_DIR, "cwa_fit_M5.rds")
 CACHE_SCEX <- file.path(RES_DIR, "cwa_scores_exp.rds")
 CACHE_SCGM <- file.path(RES_DIR, "cwa_scores_gam.rds")
+CACHE_SCM4 <- file.path(RES_DIR, "cwa_scores_M4.rds")
+CACHE_SCM5 <- file.path(RES_DIR, "cwa_scores_M5.rds")
 
 cat("\n", strrep("=", 70), "\n", sep = "")
 cat("CWA production-frontier application (HPV under-detection framing)\n")
@@ -347,7 +350,7 @@ fit_exp <- cached(CACHE_EXP, quote({
 }))
 
 # --- M3: Gamma production frontier (homogeneous) ---------------------------
-fit_gamma_manual <- function(y, X, beta_start, K = 100, log_b_warm, orientation = "cost") {
+fit_gamma_manual <- function(y, X, beta_start, K = NULL, log_b_warm, orientation = "cost") {
   k <- ncol(X)
 
   nll_3d <- function(par3) {
@@ -630,6 +633,54 @@ if (!is.null(scores_exp)) {
               min(s, na.rm = TRUE), max(s, na.rm = TRUE)))
 }
 
+# Scaling-model detection-rate posteriors. countSFA::efficiency_scores honours
+# the per-observation rate b_i = b * exp(-z_i' delta) whenever fit$delta has
+# positive length and fit$Z is present, so the scores reflect the heterogeneous
+# detection wedge driven by the monitoring/enforcement covariates in Z. The
+# fit_scaling() result stores beta under $beta and omits the class/$Z that
+# efficiency_scores expects, so we adapt it to the poisson_frontier shape first.
+as_pf_scaling <- function(fit, Z) {
+  if (is.null(fit)) return(NULL)
+  fit$coefficients <- if (!is.null(fit$beta)) fit$beta else fit$coefficients
+  fit$Z <- Z
+  class(fit) <- "poisson_frontier"
+  fit
+}
+
+scores_M4 <- if (!is.null(fit_M4)) cached(CACHE_SCM4, quote({
+  cat("  M4 detection-rate scores (heterogeneous b_i) ...\n")
+  t0 <- proc.time()
+  s <- tryCatch(
+    suppressWarnings(efficiency_scores(as_pf_scaling(fit_M4, Z), y, X)),
+    
+    error = function(e) { cat("    ERROR:", conditionMessage(e), "\n"); NULL }
+  )
+  cat(sprintf("    elapsed: %.1f sec\n", (proc.time() - t0)["elapsed"]))
+  s
+})) else NULL
+
+scores_M5 <- if (do_gamma && !is.null(fit_M5)) cached(CACHE_SCM5, quote({
+  cat("  M5 detection-rate scores (heterogeneous b_i) ...\n")
+  t0 <- proc.time()
+  s <- tryCatch(
+    suppressWarnings(efficiency_scores(as_pf_scaling(fit_M5, Z), y, X)),
+    error = function(e) { cat("    ERROR:", conditionMessage(e), "\n"); NULL }
+  )
+  cat(sprintf("    elapsed: %.1f sec\n", (proc.time() - t0)["elapsed"]))
+  s
+})) else NULL
+
+for (nm in c("M4", "M5")) {
+  sc <- if (nm == "M4") scores_M4 else scores_M5
+  if (!is.null(sc)) {
+    s <- sc$eff_score
+    cat(sprintf("\n  %s detection-rate distribution (heterogeneous detection wedge):\n", nm))
+    cat(sprintf("    Mean: %.3f  Median: %.3f  Min: %.3f  Max: %.3f\n",
+                mean(s, na.rm = TRUE), median(s, na.rm = TRUE),
+                min(s, na.rm = TRUE), max(s, na.rm = TRUE)))
+  }
+}
+
 
 # -----------------------------------------------------------------------------
 # 7. Save
@@ -648,6 +699,8 @@ saveRDS(
     fit_M5      = fit_M5,
     scores_exp  = scores_exp,
     scores_gam  = scores_gam,
+    scores_M4   = scores_M4,
+    scores_M5   = scores_M5,
     lr_tests    = lr_tests,
     n_sample    = n_sample,
     session     = sessionInfo()

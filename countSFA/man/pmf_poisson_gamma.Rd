@@ -9,7 +9,7 @@ pmf_poisson_gamma(
   a,
   b,
   alpha,
-  K = 100,
+  K = NULL,
   orientation = c("production", "cost")
 )
 }

@@ -40,6 +40,8 @@ fit_M4     <- emp$fit_M4
 fit_M5     <- emp$fit_M5
 scores_exp <- emp$scores_exp
 scores_gam <- emp$scores_gam
+scores_M4  <- emp$scores_M4
+scores_M5  <- emp$scores_M5
 lr_tests   <- emp$lr_tests
 n_obs      <- length(y)
 n_X        <- ncol(X)
@@ -67,8 +69,19 @@ preferred_label <- if (M5_ok) "Gamma scaling" else
 # Detection / compliance posteriors. Posterior of exp(-u_i) under the
 # cost-frontier orientation: this is the ratio of the latent feasible
 # minimum violation count to the observed conditional mean — interpretable
-# as a compliance-efficiency score in [0, 1].
-preferred_scores <- if (preferred_label %in% c("Gamma", "Gamma scaling")) scores_gam else scores_exp
+# as a compliance-efficiency score in [0, 1]. The scores must match the
+# preferred specification: the scaling models (M4/M5) carry the heterogeneous
+# rate b_i = b * exp(-z_i' delta), so their posteriors differ from the
+# homogeneous M2/M3 scores.
+preferred_scores <- switch(
+  preferred_label,
+  "Gamma scaling"       = scores_M5,
+  "exponential scaling" = scores_M4,
+  "Gamma"               = scores_gam,
+  scores_exp)
+# Fall back to the homogeneous posteriors if the scaling scores are unavailable.
+if (is.null(preferred_scores))
+  preferred_scores <- if (gam_ok) scores_gam else scores_exp
 
 # Inline number helpers
 ll <- function(f) {
@@ -383,7 +396,7 @@ ggplot(data.frame(te = te), aes(x = te)) +
   theme_bw(base_size = 11)
 ```
 
-The mean compliance-efficiency score is `r sprintf("%.3f", mean(preferred_scores$eff_score, na.rm = TRUE))`, indicating that the average facility operates at roughly `r sprintf("%.0f%%", 100 * mean(preferred_scores$eff_score, na.rm = TRUE))` of the irreducible compliance minimum predicted by its size, sector, and regulatory exposure. The distribution is sharply right-skewed, with a long left tail: a substantial minority of facilities exhibit very low scores, reflecting persistent inefficiency in compliance management beyond what facility characteristics alone would imply.
+The mean compliance-efficiency score is `r sprintf("%.3f", mean(preferred_scores$eff_score, na.rm = TRUE))`, indicating that the average facility attains only about `r sprintf("%.0f%%", 100 * mean(preferred_scores$eff_score, na.rm = TRUE))` of the irreducible compliance benchmark implied by its size, sector, and regulatory exposure — equivalently, observed non-compliance runs well above the feasible minimum for most units. The distribution is concentrated at low scores with a thin right tail: the bulk of facilities cluster near the lower end, while a minority reach modestly higher efficiency, reflecting persistent inefficiency in compliance management beyond what facility characteristics alone would imply.
 
 ```{r}
 #| label: fig-cwa-eff-by-mins
@@ -467,11 +480,11 @@ kable(delta_tbl, booktabs = TRUE, escape = FALSE,
            general_title = "", footnote_as_chunk = TRUE, escape = FALSE)
 ```
 
-The inspection-gap effect $\hat{\delta}_1 = `r sprintf("%.3f", delta_hat[1])`$ (SE $`r sprintf("%.3f", se_delta_hat[1])`$) confirms that facilities allowed to drift further between inspections accumulate more compliance inefficiency. The enforcement-stock variables yield estimates consistent with the *selection* interpretation rather than the deterrence interpretation: both $\hat{\delta}_2$ (formal actions) and $\hat{\delta}_3$ (total penalties) are positive, indicating that the historical stock of enforcement is a marker of chronic non-compliance rather than a deterrent against future violations — at least at the average regulator–facility margin observed in this panel. The percent-minority coefficient $\hat{\delta}_4 = `r sprintf("%.3f", delta_hat[4])`$ (SE $`r sprintf("%.3f", se_delta_hat[4])`$) is positive and statistically distinct from zero, consistent with the environmental-justice literature on systematic under-monitoring of high-minority communities translating into greater latitude for compliance shortcuts at facilities in those communities, after the frontier has absorbed the direct effect of demographics on baseline violation propensity.
+Contrary to the attention-lapse prior of @sec-emp-spec, the inspection-gap effect $\hat{\delta}_1 = `r sprintf("%.3f", delta_hat[1])`$ (SE $`r sprintf("%.3f", se_delta_hat[1])`$) is small, negative, and not significant at the 5% level: a longer interval since the last inspection is not associated with greater compliance inefficiency in this panel. A plausible reading is endogenous inspection timing — regulators direct scrutiny toward facilities they already suspect of weak compliance, so recently-inspected units are selected toward higher inefficiency and the raw inspection gap absorbs this reverse selection rather than an attention-lapse effect, the same selection logic that governs the enforcement-stock determinants below. The enforcement-stock variables yield estimates consistent with the *selection* interpretation rather than the deterrence interpretation: both $\hat{\delta}_2$ (formal actions) and $\hat{\delta}_3$ (total penalties) are positive, indicating that the historical stock of enforcement is a marker of chronic non-compliance rather than a deterrent against future violations — at least at the average regulator–facility margin observed in this panel. The percent-minority coefficient $\hat{\delta}_4 = `r sprintf("%.3f", delta_hat[4])`$ (SE $`r sprintf("%.3f", se_delta_hat[4])`$) is positive and statistically distinct from zero, consistent with the environmental-justice literature on systematic under-monitoring of high-minority communities translating into greater latitude for compliance shortcuts at facilities in those communities, after the frontier has absorbed the direct effect of demographics on baseline violation propensity.
 
 ```{r}
 #| label: fig-cwa-eff-by-insp
-#| fig-cap: "Compliance-efficiency score against the log inspection-gap variable $z_1 = \\log(1 + \\text{days since last inspection}/365)$. Each point is a facility; the LOESS smooth captures the conditional mean. The downward slope is consistent with the positive $\\hat{\\delta}_1$ in @tbl-cwa-delta-marginals: facilities further from their last inspection drift further from the compliance frontier."
+#| fig-cap: "Compliance-efficiency score against the log inspection-gap variable $z_1 = \\log(1 + \\text{days since last inspection}/365)$. Each point is a facility; the LOESS smooth captures the conditional mean. The faint upward slope mirrors the small, negative $\\hat{\\delta}_1$ in @tbl-cwa-delta-marginals: in this panel, facilities further from their last inspection are not estimated to drift further from the compliance frontier."
 #| fig-width: 6
 #| fig-height: 3.6
 
@@ -488,6 +501,6 @@ ggplot(plot_df2, aes(x = z1, y = te)) +
   theme_bw(base_size = 11)
 ```
 
-@fig-cwa-eff-by-insp visualises the inspection-gap channel non-parametrically. The downward LOESS slope confirms the direction of $\hat{\delta}_1$ in @tbl-cwa-delta-marginals: doubling the time since the last inspection moves a facility a measurable amount further from the feasible compliance minimum.
+@fig-cwa-eff-by-insp visualises the inspection-gap channel non-parametrically. The nearly flat, faintly upward LOESS slope mirrors the small and statistically weak negative $\hat{\delta}_1$ in @tbl-cwa-delta-marginals: in this sample the time since the last inspection does not move facilities measurably away from the feasible compliance minimum, contrary to the attention-lapse prior of @sec-emp-spec.
 
 The empirical findings echo the simulation evidence of @sec-sim-scaling under the cost orientation. The data prefer a Gamma inefficiency distribution with scaling determinants over both the exponential restriction and the homogeneous baseline, consistent with the simulation finding that ignoring $\boldsymbol{\delta}$ when $\mathbf{z}_i$ matters produces upward bias in $\hat{b}$ and an over-compressed efficiency distribution. The marginal effects @eq-cwa-marginal are economically interpretable in non-compliance-quarter units, providing a quantitative basis for regulatory targeting: an additional unit of $z_{ij}$ shifts expected inefficiency proportionally, and the ranking of facilities by $\widehat{\mathrm{TE}}_i$ identifies the units that operate furthest above the feasible minimum given their observable characteristics.

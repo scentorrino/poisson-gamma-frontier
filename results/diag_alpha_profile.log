@@ -1,0 +1,9 @@
+Profiling M3 (homogeneous Gamma, cost, adaptive quadrature) over 12 alpha values, n=10969
+
+   alpha         loglik      log_b   conv
+   1.000    -23780.5724    -0.3579     52
+   1.500    -23607.7616    -0.1381      0
+   2.000    -23513.7307     0.0102      0
+   3.000    -23413.9861     0.2287      0
+   5.000    -23324.5797     0.4784      0
+   7.389    -23278.2919     0.6670      0

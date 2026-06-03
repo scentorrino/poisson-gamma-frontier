@@ -9,7 +9,7 @@ log_lik_poisson_frontier(
   y,
   X,
   alpha = NULL,
-  K = 100,
+  K = NULL,
   orientation = c("production", "cost"),
   Z = NULL
 )

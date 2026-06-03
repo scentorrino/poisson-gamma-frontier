@@ -14,7 +14,7 @@ We show in this section that the marginal moments of $Y_i$ may fail to exist for
 
 (i) The marginal PMFs @eq-pmf-gamma and @eq-pmf-gamma-cost (and hence the log-likelihood) are well-defined for all
 $b > 0$, with no restriction. 
-(ii) The conditional moments $\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$ that underlie the technical efficiency scores @eq-te-gamma and @eq-te-gamma-cost are finite in both orientations, regardless of $b$. 
+(ii) The conditional moments $\mathrm{E}[e^{r u_i}\mid y_i,\, \mathbf{x}_i]$, for $r \in \mathbb{R}$, that underlie the technical efficiency scores @eq-te-gamma and @eq-te-gamma-cost are finite in both orientations, regardless of $b$.
 (iii) The unconditional moments of $Y_i$ exist for all $b > 0$ in the production case, but require $b > 1$ for the
 mean and $b > 2$ for the variance in the cost case. 
 
@@ -98,27 +98,27 @@ Estimation and efficiency scoring are unaffected by the value of $\hat b$: the l
 The homogeneous model treats all units as drawing from the same inefficiency distribution. In practice, firm-level characteristics may systematically shift the level of inefficiency, and restricting all units to the same distribution conflates genuine inefficiency with observable heterogeneity.
 
 The scaling (or multiplicative-heteroscedastic) frontier model of @caudillFord1993, @hadri1999, and @wangSchmidt2002, which generalises the panel-frontier formulation of @batteseCoelli1995, accommodates such
-inefficiency determinants by writing $u_i = g(z_i, \delta) \cdot u^*$ where $u^* \sim \mathrm{Gamma}(\alpha, b)$ and $z_i$ is a vector of observed inefficiency drivers with parameter vector $\delta$ to be estimated jointly
+inefficiency determinants by writing $u_i = g(\mathbf{z}_i, \boldsymbol{\delta}) \cdot u^*$ where $u^* \sim \mathrm{Gamma}(\alpha, b)$ and $\mathbf{z}_i$ is a vector of observed inefficiency drivers with parameter vector $\boldsymbol{\delta}$ to be estimated jointly
 with $\boldsymbol{\beta}$. This implies $u_i \sim \mathrm{Gamma}(\alpha, b_i)$ with a unit-specific rate
 
 $$
-b_i \;=\; \frac{b}{g(z_i,\, \delta)}.
+b_i \;=\; \frac{b}{g(\mathbf{z}_i,\, \boldsymbol{\delta})}.
 $$ {#eq-scaling-rate}
 
-The standard choice $g(z_i, \delta) = \exp(z_i'\delta)$ guarantees $b_i > 0$ for all values of $\delta$ and yields the log-linear mean-inefficiency structure
+The standard choice $g(\mathbf{z}_i, \boldsymbol{\delta}) = \exp(\mathbf{z}_i'\boldsymbol{\delta})$ guarantees $b_i > 0$ for all values of $\boldsymbol{\delta}$ and yields the log-linear mean-inefficiency structure
 
 $$
-b_i \;=\; b\,\exp\!\left(-z_i'\delta\right),
+b_i \;=\; b\,\exp\!\left(-\mathbf{z}_i'\boldsymbol{\delta}\right),
 \qquad
-\mathrm{E}(u_i) \;=\; \frac{\alpha\,\exp(z_i'\delta)}{b},
+\mathrm{E}(u_i) \;=\; \frac{\alpha\,\exp(\mathbf{z}_i'\boldsymbol{\delta})}{b},
 $$ {#eq-scaling-bi}
 
-so that $b_i \to \infty$ (full efficiency) as $z_i'\delta \to -\infty$ and $b_i \to 0$ (complete inefficiency) as $z_i'\delta \to +\infty$.
+so that $b_i \to \infty$ (full efficiency) as $\mathbf{z}_i'\boldsymbol{\delta} \to -\infty$ and $b_i \to 0$ (complete inefficiency) as $\mathbf{z}_i'\boldsymbol{\delta} \to +\infty$.
 
 A useful property of the count-data frontier is that the closed-form structure of @prp-pmf and @prp-te survives the introduction of scaling without modification. Because both the production-frontier alternating series @eq-pmf-gamma and the cost-frontier integral @eq-pmf-gamma-cost depend on $b$ only as a scalar, they hold observation-by-observation with $b$ replaced by $b_i$. In the exponential case ($\alpha = 1$) the production log-likelihood becomes
 
 $$
-\ell(\boldsymbol{\beta}, b, \delta)
+\ell(\boldsymbol{\beta}, b, \boldsymbol{\delta})
 \;=\; \sum_{i=1}^n \Bigl[
   \log b_i - b_i a_i + \log \gamma\!\left(y_i + b_i,\; e^{a_i}\right)
   - \log y_i!
@@ -130,17 +130,17 @@ evaluated exactly at every parameter value via the lower incomplete gamma functi
 The conditional efficiency score inherits the same analytic structure. In the exponential production case, the same substitution used to prove @cor-te-exp gives
 
 $$
-\mathrm{E}\!\left[e^{-u_i} \mid y_i,\, \mathbf{x}_i,\, z_i\right]
+\mathrm{E}\!\left[e^{-u_i} \mid y_i,\, \mathbf{x}_i,\, \mathbf{z}_i\right]
 \;=\; e^{-a_i} \cdot
   \frac{\gamma\!\left(y_i + b_i + 1,\; e^{a_i}\right)}
        {\gamma\!\left(y_i + b_i,\; e^{a_i}\right)},
 $$ {#eq-te-scaling}
 
-identical in form to @eq-te-formula with $b$ replaced by the unit-specific $b_i = b\,\exp(-z_i'\delta)$. The variables $z_i$ enter the efficiency score only through this substitution. Analogous expressions hold for the
+identical in form to @eq-te-formula with $b$ replaced by the unit-specific $b_i = b\,\exp(-\mathbf{z}_i'\boldsymbol{\delta})$. The variables $\mathbf{z}_i$ enter the efficiency score only through this substitution. Analogous expressions hold for the
 cost-frontier exponential case (via @eq-te-formula-cost), the production-frontier Gamma case (via @eq-te-gamma), and the cost-frontier Gamma case (via @eq-te-gamma-cost), each with $b \mapsto b_i$.
 
-The null hypothesis of no inefficiency determinants is $H_0{:}\;\delta = 0$, testable via a likelihood ratio test comparing the scaling and homogeneous models; under $H_0$ the test statistic is asymptotically $\chi^2$ with $\dim(\delta)$ degrees of freedom. Identification is cleanest when the variables in $z_i$ are excluded from
-$\mathbf{x}_i$: if the same variable enters both the frontier mean and the scaling function, identification of $\boldsymbol{\beta}$ and $\delta$ relies on the nonlinear entry of $b_i$ into the PMF rather than on an
+The null hypothesis of no inefficiency determinants is $H_0{:}\;\boldsymbol{\delta} = \mathbf{0}$, testable via a likelihood ratio test comparing the scaling and homogeneous models; under $H_0$ the test statistic is asymptotically $\chi^2$ with $\dim(\boldsymbol{\delta})$ degrees of freedom. Identification is cleanest when the variables in $\mathbf{z}_i$ are excluded from
+$\mathbf{x}_i$: if the same variable enters both the frontier mean and the scaling function, identification of $\boldsymbol{\beta}$ and $\boldsymbol{\delta}$ relies on the nonlinear entry of $b_i$ into the PMF rather than on an
 exclusion restriction.
 
 With the PMF, efficiency score, moments, and scaling extension all in hand, @sec-estimation builds the log-likelihood and describes how numerical optimisation is conducted, including the treatment of starting values and

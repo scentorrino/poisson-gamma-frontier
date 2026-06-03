@@ -137,7 +137,7 @@ A natural additional competitor is the negative binomial GLM (the limiting case 
 For each fitted model we record the MLE of all free parameters, their delta-method standard errors (as described in @sec-estimation), convergence status, whether each nominal 95% confidence interval covers the true value, and the mean absolute error (MAE) of the estimated technical efficiency scores against the oracle scores $e^{-u_i}$ drawn from the DGP.
 
 ::: {.remark title="Oracle efficiency scores"}
-The oracle score $e^{-u_i}$ is the exact realised efficiency of unit $i$ in a given replication, a quantity that is unobservable in practice but known in simulation. The MAE $n^{-1}\sum_i |\hat{\mathrm{TE}}_i - e^{-u_i}|$ measures how closely the
+The oracle score $e^{-u_i}$ is the exact realised efficiency of unit $i$ in a given replication, a quantity that is unobservable in practice but known in simulation. The MAE $n^{-1}\sum_i |\widehat{\mathrm{TE}}_i - e^{-u_i}|$ measures how closely the
 conditional mean efficiency approximates the truth, integrating both estimation error in $(\hat{\boldsymbol{\beta}}, \hat b, \hat\alpha)$ and the irreducible noise from the conditional averaging over $u_i$.
 :::
 
